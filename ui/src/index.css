@@ -868,20 +868,85 @@ kbd {
 /* ── Tools tab uses existing rp-table / evidence-list ─────────────────────── */
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MAIN PANE LAYOUT  (workspace → main-panes)
+   MAIN LAYOUT  (workspace → activity-bar + main-content)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Override .workspace to allow horizontal stacking */
+/* workspace is a horizontal flex row */
 .workspace {
   overflow: hidden !important;
   align-items: stretch !important;
+  display: flex !important;
+  flex-direction: row !important;
 }
 
-.main-panes {
-  display: flex;
-  width: 100%;
+/* The full-width content area that fills remaining space */
+.main-content {
+  flex: 1;
+  min-width: 0;
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Activity bar (VS Code-style icon strip) ────────────────────────────── */
+.activity-bar {
+  width: 52px;
+  flex-shrink: 0;
+  background: #1e2433;
+  border-right: 1px solid #111827;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.act-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 44px;
+  padding: 8px 4px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: rgba(255,255,255,.45);
+  transition: background .12s, color .12s;
+  position: relative;
+}
+.act-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.85);
+}
+.act-btn.active {
+  color: #93c5fd;
+  background: rgba(37,99,235,.25);
+}
+.act-btn:disabled {
+  opacity: .28;
+  cursor: not-allowed;
+}
+.act-btn.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  bottom: 20%;
+  width: 3px;
+  background: #3b82f6;
+  border-radius: 0 3px 3px 0;
+}
+.act-label {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+  color: inherit;
 }
 
 /* ── Title bar path pill ──────────────────────────────────────────────────── */
@@ -908,7 +973,6 @@ kbd {
   flex: 1;
   height: 100%;
   overflow: hidden;
-  border-right: 1px solid var(--border);
   min-width: 0;
 }
 
@@ -1282,9 +1346,9 @@ kbd {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .report-panel {
-  width: 560px;
-  min-width: 400px;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg);

@@ -5,7 +5,7 @@ import {
   Clock, Shield, Eye, ChevronDown, ChevronRight, Hash, Terminal,
   Lock, Server, Key, Folder, FolderOpen as FolderOpenIcon, FileText,
   Wifi, Package, List, Database, Cpu, Box, Globe, Users, ChevronUp,
-  File, Code, RefreshCw, Info, LayoutPanelLeft,
+  File, Code, RefreshCw, Info, LayoutPanelLeft, BarChart2, Home,
 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -224,10 +224,11 @@ function MenuBar({ onAction }) {
       { label: "Clear Analysis",              key: "clear" },
     ],
     View: [
-      { label: "Toggle Explorer Sidebar",  key: "explorer" },
-      { label: "Toggle Report Panel",      key: "report_panel" },
-      { label: "Toggle Toolbar",           key: "toolbar" },
-      { label: "Toggle Status Bar",        key: "statusbar" },
+      { label: "Show Explorer",   key: "view_explorer" },
+      { label: "Show Report",     key: "view_report" },
+      { type: "sep" },
+      { label: "Toggle Toolbar",  key: "toolbar" },
+      { label: "Toggle Status Bar", key: "statusbar" },
     ],
     Tools: [
       { label: "Analyze Image / Mountpoint…", key: "analyze" },
@@ -273,14 +274,15 @@ function MenuBar({ onAction }) {
 function Toolbar({ visible, onAction }) {
   if (!visible) return null;
   const btns = [
-    { Icon: Search,         label: "Analyze",  key: "analyze",       title: "Analyze (Ctrl+O)" },
-    { Icon: Upload,         label: "Upload",   key: "upload",        title: "Upload (Ctrl+U)" },
+    { Icon: Search,         label: "Analyze",  key: "analyze",        title: "Analyze (Ctrl+O)" },
+    { Icon: Upload,         label: "Upload",   key: "upload",         title: "Upload (Ctrl+U)" },
     { type: "sep" },
-    { Icon: LayoutPanelLeft,label: "Explorer", key: "explorer",      title: "Toggle Explorer" },
+    { Icon: LayoutPanelLeft,label: "Explorer", key: "view_explorer",  title: "Explorer view" },
+    { Icon: BarChart2,      label: "Report",   key: "view_report",    title: "Report view" },
     { type: "sep" },
-    { Icon: Trash2,         label: "Clear",    key: "clear",         title: "Clear analysis" },
+    { Icon: Trash2,         label: "Clear",    key: "clear",          title: "Clear analysis" },
     { type: "sep" },
-    { Icon: Settings,       label: "Prefs",    key: "settings",      title: "Preferences" },
+    { Icon: Settings,       label: "Prefs",    key: "settings",       title: "Preferences" },
   ];
   return (
     <div className="toolbar">
@@ -954,21 +956,47 @@ function WorkspaceHome({ onAction }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ROOT APP
 // ═══════════════════════════════════════════════════════════════════════════════
+// ─── ACTIVITY BAR ─────────────────────────────────────────────────────────────
+function ActivityBar({ view, onView, hasExplorer, hasReport }) {
+  const items = [
+    { id: "home",     Icon: Home,           label: "Home",    always: true },
+    { id: "explorer", Icon: LayoutPanelLeft, label: "Explorer",disabled: !hasExplorer },
+    { id: "report",   Icon: BarChart2,       label: "Report",  disabled: !hasReport },
+  ];
+  return (
+    <div className="activity-bar">
+      {items.map(({ id, Icon, label, always, disabled }) => (
+        <button
+          key={id}
+          className={`act-btn ${view === id ? "active" : ""}`}
+          title={label}
+          disabled={!always && disabled}
+          onClick={() => !disabled && onView(id)}
+        >
+          <Icon size={20} strokeWidth={1.6} />
+          <span className="act-label">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
-  const [dialog,       setDialog]      = useState(null);
-  const [report,       setReport]      = useState(null);
-  const [imgPath,      setImgPath]     = useState(null);
-  const [status,       setStatus]      = useState("Ready");
-  const [toolbar,      setToolbar]     = useState(true);
-  const [statbar,      setStatbar]     = useState(true);
-  const [showExplorer, setShowExplorer]= useState(true);
-  const [showReport,   setShowReport]  = useState(true);
+  const [dialog,  setDialog]  = useState(null);
+  const [report,  setReport]  = useState(null);
+  const [imgPath, setImgPath] = useState(null);
+  const [status,  setStatus]  = useState("Ready");
+  const [toolbar, setToolbar] = useState(true);
+  const [statbar, setStatbar] = useState(true);
+  // "home" | "explorer" | "report"
+  const [view,    setView]    = useState("home");
 
   function closeDialog() { setDialog(null); }
 
   function handleResult(r, path) {
     setReport(r);
     setImgPath(path || imgPath);
+    setView("report");
     const hi = r.summary?.total_high ?? 0;
     setStatus(
       `Analysis complete — ${r.findings?.length ?? 0} tool(s), ` +
@@ -988,14 +1016,17 @@ export default function App() {
       case "analyze":      return setDialog("analyze");
       case "upload":       return setDialog("upload");
       case "export":       return report ? downloadJSON(report) : setStatus("No report to export");
-      case "clear":        setReport(null); setImgPath(null); return setStatus("Analysis cleared");
+      case "clear":        setReport(null); setImgPath(null); setView("home"); return setStatus("Analysis cleared");
       case "settings":     return setDialog("settings");
       case "shortcuts":    return setDialog("shortcuts");
       case "about":        return setDialog("about");
       case "statusbar":    return setStatbar(v => !v);
       case "toolbar":      return setToolbar(v => !v);
-      case "explorer":     return setShowExplorer(v => !v);
-      case "report_panel": return setShowReport(v => !v);
+      case "view_explorer": return imgPath  ? setView("explorer") : setStatus("Open an image first");
+      case "view_report":   return report   ? setView("report")   : setStatus("Run analysis first");
+      // legacy keys still wired in menus
+      case "explorer":     return imgPath  ? setView("explorer") : setStatus("Open an image first");
+      case "report_panel": return report   ? setView("report")   : setStatus("Run analysis first");
       default:             return;
     }
   }
@@ -1011,8 +1042,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const hasContent = report || imgPath;
-
   return (
     <div className="app-shell">
       <div className="titlebar">
@@ -1025,30 +1054,30 @@ export default function App() {
       <Toolbar visible={toolbar} onAction={handleAction} />
 
       <div className="workspace">
-        {!hasContent ? (
-          <WorkspaceHome onAction={handleAction} />
-        ) : (
-          <div className="main-panes">
-            {/* Explorer always visible when we have a path */}
-            {showExplorer && imgPath && (
-              <Explorer imgPath={imgPath} />
-            )}
-
-            {/* Report panel — shown when analysis has run */}
-            {showReport && report && (
-              <ReportPanel
-                report={report}
-                onClear={() => handleAction("clear")}
-                onExport={() => downloadJSON(report)}
-              />
-            )}
-
-            {/* If explorer hidden or no path yet, show placeholder */}
-            {!showExplorer && !report && (
-              <WorkspaceHome onAction={handleAction} />
-            )}
-          </div>
+        {/* Activity bar — always visible once anything is loaded */}
+        {(report || imgPath) && (
+          <ActivityBar
+            view={view}
+            onView={setView}
+            hasExplorer={!!imgPath}
+            hasReport={!!report}
+          />
         )}
+
+        {/* Main content — single full-width panel at a time */}
+        <div className="main-content">
+          {view === "home"     && <WorkspaceHome onAction={handleAction} />}
+          {view === "explorer" && imgPath && <Explorer imgPath={imgPath} />}
+          {view === "report"   && report  && (
+            <ReportPanel
+              report={report}
+              onClear={() => handleAction("clear")}
+              onExport={() => downloadJSON(report)}
+            />
+          )}
+          {/* fallback: nothing loaded yet */}
+          {!report && !imgPath && <WorkspaceHome onAction={handleAction} />}
+        </div>
       </div>
 
       <StatusBar visible={statbar} status={status} report={report} />
