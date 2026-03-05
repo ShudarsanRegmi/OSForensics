@@ -71,7 +71,7 @@ class FilesystemAccessor:
             full = self._local_full(path)
             try:
                 return os.listdir(full)
-            except FileNotFoundError:
+            except OSError:
                 return []
         # TSK mode
         try:

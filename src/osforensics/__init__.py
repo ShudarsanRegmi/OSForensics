@@ -9,4 +9,7 @@ __all__ = [
     "classifier",
     "report",
     "api",
+    "timeline",
+    "deleted",
+    "persistence",
 ]
