@@ -6,6 +6,7 @@ import {
   Lock, Server, Key, Folder, FolderOpen as FolderOpenIcon, FileText,
   Wifi, Package, List, Database, Cpu, Box, Globe, Users, ChevronUp,
   File, Code, RefreshCw, Info, LayoutPanelLeft, BarChart2, Home,
+  BookOpen, Plus,
 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -32,7 +33,15 @@ const apiFsBrowse = (path)       => post("/fs/browse",      { path });
 const apiBrowse   = (img, path)  => post("/explore/browse", { image_path: img, path });
 const apiStat     = (img, path)  => post("/explore/stat",   { image_path: img, path });
 const apiRead     = (img, path)  => post("/explore/read",   { image_path: img, path });
-const apiTree     = ()           => get("/explore/tree");
+const apiTree        = ()                => get("/explore/tree");
+
+// ── Case management API ───────────────────────────────────────────────────────
+const apiCasesList   = ()                => get("/cases");
+const apiCaseCreate  = (body)            => post("/cases", body);
+const apiCaseGet     = (id)              => get(`/cases/${id}`);
+const apiCaseDelete  = (id)              => fetch(`${API}/cases/${id}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+const apiCaseAnalyze = (caseId, imgPath) => post(`/cases/${caseId}/analyze`, { image_path: imgPath });
+const apiCaseDelSrc  = (caseId, srcId)   => fetch(`${API}/cases/${caseId}/sources/${srcId}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
 
 // ─── Severity / icon helpers ──────────────────────────────────────────────────
 const SEV_COLOR = { high: "#dc2626", medium: "#d97706", low: "#16a34a", info: "#2563eb" };
@@ -120,7 +129,7 @@ function AnalyzeDialog({ onClose, onResult }) {
 }
 
 // ─── FILE PICKER DIALOG ──────────────────────────────────────────────────────
-function FilePickerDialog({ onClose, onResult }) {
+function FilePickerDialog({ onClose, onResult, analyzeOnPick = true }) {
   const [cwd,      setCwd]      = useState("/");
   const [children, setChildren] = useState([]);
   const [crumbs,   setCrumbs]   = useState([{ label: "/", path: "/" }]);
@@ -144,6 +153,7 @@ function FilePickerDialog({ onClose, onResult }) {
 
   async function confirm() {
     const target = selected ? selected.path : cwd;
+    if (!analyzeOnPick) { onResult(null, target); onClose(); return; }
     setAnalyzing(true); setErr(null);
     try {
       onResult(await apiAnalyze(target), target);
@@ -204,7 +214,7 @@ function FilePickerDialog({ onClose, onResult }) {
       {err && <div className="dlg-error">{err}</div>}
       <div className="dlg-actions">
         <button className="btn-primary" onClick={confirm} disabled={analyzing}>
-          <Search size={14} />{analyzing ? "Analyzing…" : "Open & Analyze"}
+          <Search size={14} />{analyzing ? "Analyzing…" : analyzeOnPick ? "Open & Analyze" : "Select"}
         </button>
         <button className="btn-secondary" onClick={onClose}>Cancel</button>
       </div>
@@ -288,6 +298,10 @@ function MenuBar({ onAction }) {
       { label: "Export Report JSON…",         key: "export" },
       { type: "sep" },
       { label: "Clear Analysis",              key: "clear" },
+    ],
+    Cases: [
+      { label: "New Case…",       key: "new_case"   },
+      { label: "Open Cases View", key: "view_cases" },
     ],
     View: [
       { label: "Show Explorer",   key: "view_explorer" },
@@ -1030,6 +1044,336 @@ function ReportPanel({ report, onClear, onExport }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// CASE MANAGEMENT COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+// ── NewCaseDialog ─────────────────────────────────────────────────────────────
+function NewCaseDialog({ onClose, onCreate }) {
+  const [fields, setFields] = useState({ name: "", number: "", examiner: "", description: "" });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const set = (k) => (e) => setFields((f) => ({ ...f, [k]: e.target.value }));
+
+  async function submit() {
+    if (!fields.name.trim()) { setErr("Case name is required."); return; }
+    setLoading(true); setErr(null);
+    try {
+      const c = await apiCaseCreate(fields);
+      onCreate(c);
+      onClose();
+    } catch (e) { setErr(String(e)); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <Modal title="New Forensic Case" onClose={onClose} width={520}>
+      <div className="dlg-field">
+        <label>Case Name *</label>
+        <input autoFocus value={fields.name} onChange={set("name")} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="e.g. Incident Response 2026-03" />
+      </div>
+      <div className="dlg-row2">
+        <div className="dlg-field">
+          <label>Case Number</label>
+          <input value={fields.number} onChange={set("number")} placeholder="CASE-2026-001" />
+        </div>
+        <div className="dlg-field">
+          <label>Examiner</label>
+          <input value={fields.examiner} onChange={set("examiner")} placeholder="Jane Forensics" />
+        </div>
+      </div>
+      <div className="dlg-field">
+        <label>Description</label>
+        <textarea rows={3} value={fields.description} onChange={set("description")} placeholder="Brief description of the investigation…" style={{ width: "100%", padding: "7px 10px", border: "1px solid var(--border)", borderRadius: "var(--radius)", font: "inherit", fontSize: 13, resize: "vertical", background: "#fafbfd", outline: "none" }} />
+      </div>
+      {err && <div className="dlg-error">{err}</div>}
+      <div className="dlg-actions">
+        <button className="btn-primary" onClick={submit} disabled={loading || !fields.name.trim()}>
+          <Plus size={14} />{loading ? "Creating…" : "Create Case"}
+        </button>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── AddSourceDialog ───────────────────────────────────────────────────────────
+function AddSourceDialog({ onClose, caseId, onSuccess }) {
+  const [picking, setPicking] = useState(false);
+  const [path, setPath] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function run() {
+    if (!path) return;
+    setLoading(true); setErr(null);
+    try {
+      const res = await apiCaseAnalyze(caseId, path);
+      onSuccess(res.source, res.report);
+      onClose();
+    } catch (e) { setErr(String(e)); }
+    finally { setLoading(false); }
+  }
+
+  if (picking) {
+    return (
+      <FilePickerDialog
+        onClose={() => setPicking(false)}
+        onResult={(_, selectedPath) => { setPath(selectedPath); setPicking(false); }}
+        analyzeOnPick={false}
+      />
+    );
+  }
+
+  return (
+    <Modal title="Add Data Source to Case" onClose={onClose} width={560}>
+      <div className="dlg-field">
+        <label>Image / Mountpoint Path</label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            style={{ flex: 1 }}
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && run()}
+            placeholder="/mnt/evidence  or  /path/to/disk.img"
+          />
+          <button className="btn-secondary" onClick={() => setPicking(true)} title="Browse filesystem">
+            <FolderOpen size={15} />
+          </button>
+        </div>
+        <div className="dlg-hint">The analysis result will be saved into this case automatically.</div>
+      </div>
+      {err && <div className="dlg-error">{err}</div>}
+      <div className="dlg-actions">
+        <button className="btn-primary" onClick={run} disabled={loading || !path}>
+          <Search size={14} />{loading ? "Analyzing…" : "Analyze & Add"}
+        </button>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── CasesView ─────────────────────────────────────────────────────────────────
+function CasesView({ onOpen, onNewCase }) {
+  const [cases, setCases] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+
+  async function load() {
+    setLoading(true); setErr(null);
+    try { const r = await apiCasesList(); setCases(r.cases); }
+    catch (e) { setErr(String(e)); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleDelete(e, id) {
+    e.stopPropagation();
+    if (!window.confirm("Permanently delete this case and all its data?")) return;
+    setDeleting(id);
+    try { await apiCaseDelete(id); setCases((cs) => cs.filter((c) => c.id !== id)); }
+    catch (err2) { alert("Delete failed: " + String(err2)); }
+    finally { setDeleting(null); }
+  }
+
+  return (
+    <div className="cases-view">
+      <div className="cases-header">
+        <div className="cases-header-left">
+          <BookOpen size={18} className="cases-hdr-icon" />
+          <span className="cases-title">Cases</span>
+          {cases && <span className="cases-count">{cases.length}</span>}
+        </div>
+        <div className="cases-header-right">
+          <button className="btn-secondary btn-sm" onClick={load} title="Refresh">
+            <RefreshCw size={13} />
+          </button>
+          <button className="btn-primary btn-sm" onClick={onNewCase}>
+            <Plus size={13} /> New Case
+          </button>
+        </div>
+      </div>
+
+      <div className="cases-body">
+        {loading && <div className="cases-loading"><RefreshCw size={20} className="spin" /> Loading cases…</div>}
+        {err && <div className="dlg-error" style={{ margin: 24 }}>{err}</div>}
+        {!loading && cases?.length === 0 && (
+          <div className="cases-empty">
+            <BookOpen size={48} strokeWidth={1.2} className="cases-empty-icon" />
+            <p>No cases yet.</p>
+            <button className="btn-primary" onClick={onNewCase}><Plus size={14} /> Create First Case</button>
+          </div>
+        )}
+        {!loading && cases?.length > 0 && (
+          <div className="cases-grid">
+            {cases.map((c) => (
+              <div key={c.id} className="case-card" onClick={() => onOpen(c.id)}>
+                <div className="case-card-top">
+                  <div className="case-card-icon"><BookOpen size={22} strokeWidth={1.4} /></div>
+                  <div className="case-card-meta">
+                    {c.number && <span className="case-number">{c.number}</span>}
+                    <h3 className="case-name">{c.name}</h3>
+                    {c.examiner && <span className="case-examiner"><Users size={11} /> {c.examiner}</span>}
+                  </div>
+                  <button
+                    className="case-del-btn"
+                    title="Delete case"
+                    disabled={deleting === c.id}
+                    onClick={(e) => handleDelete(e, c.id)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+                {c.description && <p className="case-desc">{c.description}</p>}
+                <div className="case-card-footer">
+                  <span><HardDrive size={11} /> {c.source_count} source{c.source_count !== 1 ? "s" : ""}</span>
+                  <span><Clock size={11} /> {fmtDate(c.updated_at)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── CasePanel ─────────────────────────────────────────────────────────────────
+function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onDeleteSource, onBack }) {
+  const [activeTab, setActiveTab] = useState("sources");
+  const { data_sources = [] } = caseData;
+
+  const threatSummary = (src) => {
+    const hi = src.report?.summary?.total_high ?? 0;
+    if (hi === 0) return { label: "CLEAN", cls: "tl-low" };
+    if (hi >= 10) return { label: "CRITICAL", cls: "tl-critical" };
+    if (hi >= 5)  return { label: "HIGH",     cls: "tl-high" };
+    return             { label: "MEDIUM",   cls: "tl-medium" };
+  };
+
+  return (
+    <div className="case-panel">
+      {/* Header */}
+      <div className="case-panel-header">
+        <button className="case-back-btn" onClick={onBack} title="Back to cases">
+          <ChevronRight size={16} style={{ transform: "rotate(180deg)" }} />
+        </button>
+        <div className="case-panel-title-wrap">
+          <BookOpen size={16} className="case-panel-icon" />
+          <div>
+            <div className="case-panel-name">{caseData.name}</div>
+            <div className="case-panel-meta">
+              {caseData.number && <span className="tag">{caseData.number}</span>}
+              {caseData.examiner && <span className="tag"><Users size={10} /> {caseData.examiner}</span>}
+              <span className="tag"><Clock size={10} /> Created {fmtDate(caseData.created_at)}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ marginLeft: "auto" }}>
+          <button className="btn-primary btn-sm" onClick={onAddSource}>
+            <Plus size={13} /> Add Data Source
+          </button>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="case-tabs">
+        {[["sources", HardDrive, "Data Sources"], ["info", Info, "Case Info"]].map(([id, Icon, label]) => (
+          <button key={id} className={`case-tab ${activeTab === id ? "active" : ""}`} onClick={() => setActiveTab(id)}>
+            <Icon size={13} />{label}
+          </button>
+        ))}
+      </div>
+
+      {/* Sources tab */}
+      {activeTab === "sources" && (
+        <div className="case-sources">
+          {data_sources.length === 0 ? (
+            <div className="cases-empty" style={{ paddingTop: 40 }}>
+              <HardDrive size={40} strokeWidth={1.2} className="cases-empty-icon" />
+              <p>No data sources yet.</p>
+              <button className="btn-primary" onClick={onAddSource}><Plus size={14} /> Add Data Source</button>
+            </div>
+          ) : (
+            <div className="source-list">
+              {data_sources.map((src) => {
+                const threat = threatSummary(src);
+                const isActive = activeSourceId === src.id;
+                return (
+                  <div
+                    key={src.id}
+                    className={`source-row ${isActive ? "source-row-active" : ""}`}
+                    onClick={() => onSelectSource(src)}
+                  >
+                    <HardDrive size={18} strokeWidth={1.4} className="source-row-icon" />
+                    <div className="source-row-body">
+                      <div className="source-row-label">{src.label || src.path}</div>
+                      <div className="source-row-path">{src.path}</div>
+                      <div className="source-row-meta">
+                        <span><Clock size={10} /> {fmtDate(src.added_at)}</span>
+                        {src.report && (
+                          <>
+                            <span><FileText size={10} /> {src.report.findings?.length ?? 0} tools</span>
+                            <span><Clock size={10} /> {src.report.summary?.timeline_events ?? 0} events</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`source-threat ${threat.cls}`}>{threat.label}</span>
+                    <button
+                      className="source-del-btn"
+                      title="Remove source"
+                      onClick={(e) => { e.stopPropagation(); onDeleteSource(src.id); }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Info tab */}
+      {activeTab === "info" && (
+        <div className="case-info">
+          <table className="rp-table" style={{ maxWidth: 600 }}>
+            <tbody>
+              {[
+                ["Case Name",    caseData.name],
+                ["Case Number",  caseData.number  || "—"],
+                ["Examiner",     caseData.examiner || "—"],
+                ["Created",      fmtDate(caseData.created_at)],
+                ["Last Updated", fmtDate(caseData.updated_at)],
+                ["Sources",      data_sources.length],
+                ["Case ID",      <code style={{ fontSize: 11 }}>{caseData.id}</code>],
+              ].map(([k, v]) => (
+                <tr key={k}><td>{k}</td><td>{v}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          {caseData.description && (
+            <div style={{ marginTop: 16, padding: "12px 14px", background: "#f8f9fc", border: "1px solid var(--border-lt)", borderRadius: "var(--radius)", fontSize: 13, color: "var(--fg-muted)", lineHeight: 1.6 }}>
+              {caseData.description}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── WORKSPACE HOME ───────────────────────────────────────────────────────────
 function WorkspaceHome({ onAction }) {
   return (
@@ -1066,16 +1410,20 @@ function WorkspaceHome({ onAction }) {
 // ─── ACTIVITY BAR ─────────────────────────────────────────────────────────────
 function ActivityBar({ view, onView, hasExplorer, hasReport }) {
   const items = [
-    { id: "home",     Icon: Home,           label: "Home",    always: true },
-    { id: "explorer", Icon: LayoutPanelLeft, label: "Explorer",disabled: !hasExplorer },
-    { id: "report",   Icon: BarChart2,       label: "Report",  disabled: !hasReport },
+    { id: "home",     Icon: Home,            label: "Home",    always: true },
+    { id: "cases",    Icon: BookOpen,         label: "Cases",   always: true },
+    { id: "explorer", Icon: LayoutPanelLeft,  label: "Explorer",disabled: !hasExplorer },
+    { id: "report",   Icon: BarChart2,        label: "Report",  disabled: !hasReport },
   ];
+  const caseActive = view === "cases" || view === "case";
   return (
     <div className="activity-bar">
       {items.map(({ id, Icon, label, always, disabled }) => (
         <button
           key={id}
-          className={`act-btn ${view === id ? "active" : ""}`}
+          className={`act-btn ${
+            (id === "cases" && caseActive) || (id !== "cases" && view === id) ? "active" : ""
+          }`}
           title={label}
           disabled={!always && disabled}
           onClick={() => !disabled && onView(id)}
@@ -1089,14 +1437,16 @@ function ActivityBar({ view, onView, hasExplorer, hasReport }) {
 }
 
 export default function App() {
-  const [dialog,  setDialog]  = useState(null);
-  const [report,  setReport]  = useState(null);
-  const [imgPath, setImgPath] = useState(null);
-  const [status,  setStatus]  = useState("Ready");
-  const [toolbar, setToolbar] = useState(true);
-  const [statbar, setStatbar] = useState(true);
-  // "home" | "explorer" | "report"
-  const [view,    setView]    = useState("home");
+  const [dialog,      setDialog]      = useState(null);
+  const [report,      setReport]      = useState(null);
+  const [imgPath,     setImgPath]     = useState(null);
+  const [status,      setStatus]      = useState("Ready");
+  const [toolbar,     setToolbar]     = useState(true);
+  const [statbar,     setStatbar]     = useState(true);
+  // "home" | "cases" | "case" | "explorer" | "report"
+  const [view,        setView]        = useState("home");
+  const [activeCase,  setActiveCase]  = useState(null);
+  const [activeSrcId, setActiveSrcId] = useState(null);
 
   function closeDialog() { setDialog(null); }
 
@@ -1112,6 +1462,23 @@ export default function App() {
     );
   }
 
+  function handleSourceAdded(updatedCase, source, rpt) {
+    setActiveCase(updatedCase);
+    setReport(rpt);
+    setImgPath(source.path);
+    setActiveSrcId(source.id);
+    setView("report");
+    const hi = rpt.summary?.total_high ?? 0;
+    setStatus(`Source added to "${updatedCase.name}" — ${hi} high-severity indicator${hi !== 1 ? "s" : ""}`);
+  }
+
+  function selectSource(src) {
+    setActiveSrcId(src.id);
+    setReport(src.report);
+    setImgPath(src.path);
+    setView("report");
+  }
+
   function downloadJSON(r) {
     const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -1120,21 +1487,22 @@ export default function App() {
 
   function handleAction(key) {
     switch (key) {
-      case "analyze":      return setDialog("analyze");
-      case "filepick":     return setDialog("filepick");
-      case "export":       return report ? downloadJSON(report) : setStatus("No report to export");
-      case "clear":        setReport(null); setImgPath(null); setView("home"); return setStatus("Analysis cleared");
-      case "settings":     return setDialog("settings");
-      case "shortcuts":    return setDialog("shortcuts");
-      case "about":        return setDialog("about");
-      case "statusbar":    return setStatbar(v => !v);
-      case "toolbar":      return setToolbar(v => !v);
-      case "view_explorer": return imgPath  ? setView("explorer") : setStatus("Open an image first");
-      case "view_report":   return report   ? setView("report")   : setStatus("Run analysis first");
-      // legacy keys still wired in menus
-      case "explorer":     return imgPath  ? setView("explorer") : setStatus("Open an image first");
-      case "report_panel": return report   ? setView("report")   : setStatus("Run analysis first");
-      default:             return;
+      case "analyze":       return setDialog("analyze");
+      case "filepick":      return setDialog("filepick");
+      case "new_case":      return setDialog("new_case");
+      case "view_cases":    return setView("cases");
+      case "export":        return report ? downloadJSON(report) : setStatus("No report to export");
+      case "clear":         setReport(null); setImgPath(null); setActiveCase(null); setActiveSrcId(null); setView("home"); return setStatus("Analysis cleared");
+      case "settings":      return setDialog("settings");
+      case "shortcuts":     return setDialog("shortcuts");
+      case "about":         return setDialog("about");
+      case "statusbar":     return setStatbar(v => !v);
+      case "toolbar":       return setToolbar(v => !v);
+      case "view_explorer": return imgPath ? setView("explorer") : setStatus("Open an image first");
+      case "view_report":   return report  ? setView("report")   : setStatus("Run analysis first");
+      case "explorer":      return imgPath ? setView("explorer") : setStatus("Open an image first");
+      case "report_panel":  return report  ? setView("report")   : setStatus("Run analysis first");
+      default:              return;
     }
   }
 
@@ -1155,27 +1523,58 @@ export default function App() {
         <Microscope size={16} strokeWidth={1.8} className="title-icon" />
         <span className="title-name">OS Forensics</span>
         <span className="title-build">Advanced Forensic Analysis</span>
-        {imgPath && <span className="title-path">{imgPath}</span>}
+        {activeCase && (
+          <span className="title-case-badge">
+            <BookOpen size={11} /> {activeCase.name}{activeCase.number ? ` · ${activeCase.number}` : ""}
+          </span>
+        )}
+        {!activeCase && imgPath && <span className="title-path">{imgPath}</span>}
       </div>
       <MenuBar onAction={handleAction} />
       <Toolbar visible={toolbar} onAction={handleAction} />
 
       <div className="workspace">
-        {/* Activity bar — always visible once anything is loaded */}
-        {(report || imgPath) && (
-          <ActivityBar
-            view={view}
-            onView={setView}
-            hasExplorer={!!imgPath}
-            hasReport={!!report}
-          />
-        )}
+        <ActivityBar
+          view={view}
+          onView={setView}
+          hasExplorer={!!imgPath}
+          hasReport={!!report}
+        />
 
-        {/* Main content — single full-width panel at a time */}
         <div className="main-content">
-          {view === "home"     && <WorkspaceHome onAction={handleAction} />}
+          {view === "home" && <WorkspaceHome onAction={handleAction} />}
+
+          {view === "cases" && (
+            <CasesView
+              onOpen={async (id) => {
+                try { const c = await apiCaseGet(id); setActiveCase(c); setView("case"); }
+                catch (e) { setStatus("Failed to open case: " + String(e)); }
+              }}
+              onNewCase={() => handleAction("new_case")}
+            />
+          )}
+
+          {view === "case" && activeCase && (
+            <CasePanel
+              caseData={activeCase}
+              activeSourceId={activeSrcId}
+              onSelectSource={selectSource}
+              onAddSource={() => setDialog("add_source")}
+              onDeleteSource={async (srcId) => {
+                try {
+                  await apiCaseDelSrc(activeCase.id, srcId);
+                  const updated = await apiCaseGet(activeCase.id);
+                  setActiveCase(updated);
+                  if (activeSrcId === srcId) { setActiveSrcId(null); setReport(null); setImgPath(null); }
+                } catch (e) { setStatus("Failed to remove source: " + String(e)); }
+              }}
+              onBack={() => setView("cases")}
+            />
+          )}
+
           {view === "explorer" && imgPath && <Explorer imgPath={imgPath} />}
-          {view === "report"   && report  && (
+
+          {view === "report" && report && (
             <ReportPanel
               report={report}
               onClear={() => handleAction("clear")}
@@ -1187,11 +1586,27 @@ export default function App() {
 
       <StatusBar visible={statbar} status={status} report={report} />
 
-      {dialog === "analyze"   && <AnalyzeDialog   onClose={closeDialog} onResult={handleResult} />}
-      {dialog === "filepick"  && <FilePickerDialog onClose={closeDialog} onResult={handleResult} />}
-      {dialog === "settings"  && <SettingsDialog  onClose={closeDialog} />}
-      {dialog === "shortcuts" && <ShortcutsDialog onClose={closeDialog} />}
-      {dialog === "about"     && <AboutDialog     onClose={closeDialog} />}
+      {dialog === "analyze"    && <AnalyzeDialog    onClose={closeDialog} onResult={handleResult} />}
+      {dialog === "filepick"   && <FilePickerDialog  onClose={closeDialog} onResult={handleResult} />}
+      {dialog === "new_case"   && (
+        <NewCaseDialog
+          onClose={closeDialog}
+          onCreate={(c) => { setActiveCase(c); setView("case"); }}
+        />
+      )}
+      {dialog === "add_source" && activeCase && (
+        <AddSourceDialog
+          onClose={closeDialog}
+          caseId={activeCase.id}
+          onSuccess={async (source, rpt) => {
+            try { const updated = await apiCaseGet(activeCase.id); handleSourceAdded(updated, source, rpt); }
+            catch (e) { setStatus("Case update failed: " + String(e)); }
+          }}
+        />
+      )}
+      {dialog === "settings"   && <SettingsDialog   onClose={closeDialog} />}
+      {dialog === "shortcuts"  && <ShortcutsDialog  onClose={closeDialog} />}
+      {dialog === "about"      && <AboutDialog      onClose={closeDialog} />}
     </div>
   );
 }

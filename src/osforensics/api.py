@@ -28,6 +28,10 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from .cases import (
+    list_cases, create_case, get_case, update_case, delete_case,
+    add_data_source, remove_data_source,
+)
 from .classifier import classify_findings
 from .deleted import detect_deleted
 from .detector import detect_os, detect_tools
@@ -243,3 +247,110 @@ def fs_browse(req: FsBrowseRequest):
         crumbs.append({"label": part, "path": "/" + "/".join(parts[:i + 1])})
 
     return {"path": path, "children": children, "breadcrumbs": crumbs}
+
+
+# ── Case management models ────────────────────────────────────────────────────
+
+class CaseCreate(BaseModel):
+    name: str
+    number: str = ""
+    examiner: str = ""
+    description: str = ""
+
+
+class CaseUpdate(BaseModel):
+    name: Optional[str] = None
+    number: Optional[str] = None
+    examiner: Optional[str] = None
+    description: Optional[str] = None
+
+
+class CaseAnalyzeRequest(BaseModel):
+    image_path: str
+
+
+# ── Case management endpoints ─────────────────────────────────────────────────
+
+@app.get("/cases")
+def cases_list():
+    """Return a lightweight summary list of all cases."""
+    return {"cases": list_cases()}
+
+
+@app.post("/cases")
+def cases_create(req: CaseCreate):
+    """Create a new case and return its full data."""
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Case name is required")
+    return create_case(req.name, req.number, req.examiner, req.description)
+
+
+@app.get("/cases/{case_id}")
+def cases_get(case_id: str):
+    """Return the full case data including all data sources and reports."""
+    try:
+        return get_case(case_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/cases/{case_id}")
+def cases_update(case_id: str, req: CaseUpdate):
+    """Update case metadata (name, number, examiner, description)."""
+    try:
+        return update_case(case_id, req.name, req.number, req.examiner, req.description)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/cases/{case_id}")
+def cases_delete(case_id: str):
+    """Permanently delete a case and all its stored data."""
+    try:
+        delete_case(case_id)
+        return {"ok": True}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/cases/{case_id}/analyze")
+def cases_analyze(case_id: str, req: CaseAnalyzeRequest):
+    """Run a full forensic analysis and save the result as a data source in the case."""
+    try:
+        get_case(case_id)   # verify exists before expensive analysis
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        fs = FilesystemAccessor(req.image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        report = _full_analysis(fs)
+        label  = os.path.basename(req.image_path.rstrip("/")) or req.image_path
+        source = add_data_source(case_id, req.image_path, label, report)
+        return {"source": source, "report": report}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.delete("/cases/{case_id}/sources/{source_id}")
+def cases_remove_source(case_id: str, source_id: str):
+    """Remove a data source from a case."""
+    try:
+        remove_data_source(case_id, source_id)
+        return {"ok": True}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
