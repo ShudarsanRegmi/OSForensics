@@ -8,6 +8,8 @@ Extended endpoints:
   POST /upload            – upload a disk image, analyse, then delete temporary file
   POST /timeline          – timeline-only scan for a given path
   POST /deleted           – deleted-file scan for a given path
+  POST /deleted/recover   – recover a single file by recovery_id
+  POST /deleted/carve     – signature-based file carving from a raw disk image
   POST /persistence       – persistence-mechanism scan for a given path
   POST /config            – configuration-file audit for a given path
   POST /services          – service detection and enumeration for a given path
@@ -38,7 +40,7 @@ from .cases import (
 )
 from .classifier import classify_findings
 from .config import analyze_configs
-from .deleted import detect_deleted, recover_file, SAFE_RECOVERY_DIR
+from .deleted import detect_deleted, recover_file, carve_files, CARVE_GROUPS, SAFE_RECOVERY_DIR
 from .detector import detect_os, detect_tools
 from .explorer import ARTIFACT_TREE, browse, stat_file, read_text
 from .extractor import FilesystemAccessor
@@ -62,6 +64,14 @@ class RecoverRequest(BaseModel):
     image_path: str
     recovery_id: str
     output_dir: Optional[str] = None
+
+
+class CarveRequest(BaseModel):
+    image_path: str
+    output_dir: Optional[str] = None
+    sig_groups: Optional[list] = None   # None = all groups
+    max_files: int = 200
+    max_scan_gb: float = 2.0            # scan ceiling in GB
 
 
 app = FastAPI(title="OS Forensics API")
@@ -154,6 +164,54 @@ def deleted_scan(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail=str(e))
     try:
         return {"deleted": detect_deleted(fs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.get("/deleted/carve/groups")
+def carve_groups():
+    """Return available carving signature groups and their descriptions."""
+    return {"groups": CARVE_GROUPS}
+
+
+@app.post("/deleted/carve")
+def deleted_carve(req: CarveRequest):
+    """Signature-based file carving from a raw disk image.
+
+    Scans the raw bytes of the image looking for known file-type magic bytes
+    (JPEG, PNG, PDF, ZIP, ELF, SQLite, …) and extracts matching data to
+    output_dir.  Works even when all inode / partition metadata is wiped.
+    Only applicable to disk images (not live mounted directories).
+    """
+    if not os.path.isfile(req.image_path):
+        raise HTTPException(
+            status_code=400,
+            detail="File carving requires a disk image file path, not a directory.",
+        )
+    # Validate / derive output directory
+    _BLOCKED = ("/", "/etc", "/bin", "/sbin", "/usr", "/lib",
+                "/boot", "/proc", "/sys", "/dev", "/root")
+    if req.output_dir is not None:
+        out_dir = os.path.abspath(req.output_dir)
+        if out_dir in _BLOCKED:
+            raise HTTPException(status_code=400, detail="Unsafe output directory.")
+    else:
+        out_dir = os.path.join(SAFE_RECOVERY_DIR, "carved")
+
+    try:
+        fs = FilesystemAccessor(req.image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        results = carve_files(
+            fs,
+            out_dir,
+            sig_groups=req.sig_groups or None,
+            max_files=min(req.max_files, 500),
+            max_scan_bytes=int(req.max_scan_gb * 1024 ** 3),
+        )
+        carved_count = sum(1 for r in results if r["type"] == "carved")
+        return {"carved": results, "output_dir": out_dir, "carved_count": carved_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
 

@@ -554,3 +554,256 @@ def detect_deleted(fs: FilesystemAccessor) -> List[Dict]:
     findings.extend(scan_open_deleted(fs))
     findings.extend(scan_anti_forensics(fs))
     return findings
+
+
+# ── File Carving (signature-based recovery) ────────────────────────────────────
+#
+# Scans the raw bytes of a disk image for known file-type magic bytes ("headers")
+# and optionally their corresponding terminating byte sequences ("footers").
+# Works even when the inode table has been wiped — the technique used by tools
+# like Foremost, Scalpel, and PhotoRec.
+#
+# Only applicable to disk-image (TSK) mode; mounting a live directory gives no
+# raw unallocated blocks to scan.
+
+_CARVE_CHUNK = 4 * 1024 * 1024   # 4 MB read window
+
+_MB = 1024 * 1024
+
+# Each entry: (type_name, file_ext, header_bytes, footer_bytes_or_None, max_size, group)
+CARVE_SIGNATURES = [
+    # ── images ─────────────────────────────────────────────────────────────────
+    ("JPEG",         "jpg",   b"\xff\xd8\xff",                  b"\xff\xd9",               30 * _MB,  "image"),
+    ("PNG",          "png",   b"\x89PNG\r\n\x1a\n",             b"IEND\xaeB`\x82",         25 * _MB,  "image"),
+    ("GIF87a",       "gif",   b"GIF87a",                        b"\x00\x3b",               10 * _MB,  "image"),
+    ("GIF89a",       "gif",   b"GIF89a",                        b"\x00\x3b",               10 * _MB,  "image"),
+    ("BMP",          "bmp",   b"BM",                            None,                       5 * _MB,  "image"),
+    ("TIFF-LE",      "tif",   b"II\x2a\x00",                   None,                      50 * _MB,  "image"),
+    ("TIFF-BE",      "tif",   b"MM\x00\x2a",                   None,                      50 * _MB,  "image"),
+    ("WEBP",         "webp",  b"RIFF",                          None,                      10 * _MB,  "image"),   # RIFF….WEBP
+    # ── documents ──────────────────────────────────────────────────────────────
+    ("PDF",          "pdf",   b"%PDF",                          b"%%EOF",                 100 * _MB,  "document"),
+    ("ZIP/DOCX/XLSX","zip",   b"PK\x03\x04",                   b"PK\x05\x06",            200 * _MB,  "document"),
+    ("OLE2",         "doc",   b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", None,                100 * _MB,  "document"),  # Word/Excel/PPT
+    ("RTF",          "rtf",   b"{\\rtf",                        b"}",                     20 * _MB,  "document"),
+    # ── executables / binaries ─────────────────────────────────────────────────
+    ("ELF",          "elf",   b"\x7fELF",                       None,                     50 * _MB,  "executable"),
+    ("Mach-O",       "macho", b"\xce\xfa\xed\xfe",              None,                     50 * _MB,  "executable"),  # 32-bit little-endian
+    ("Mach-O-64",    "macho", b"\xcf\xfa\xed\xfe",              None,                     50 * _MB,  "executable"),
+    # ── databases ──────────────────────────────────────────────────────────────
+    ("SQLite",       "db",    b"SQLite format 3\x00",           None,                    200 * _MB,  "database"),
+    # ── archives ───────────────────────────────────────────────────────────────
+    ("GZIP",         "gz",    b"\x1f\x8b\x08",                  None,                   100 * _MB,  "archive"),
+    ("BZIP2",        "bz2",   b"BZh",                            None,                   100 * _MB,  "archive"),
+    ("7-Zip",        "7z",    b"7z\xbc\xaf\x27\x1c",            None,                   500 * _MB,  "archive"),
+    ("XZ",           "xz",    b"\xfd7zXZ\x00",                  b"\x59\x5a",            100 * _MB,  "archive"),
+    # ── email / forensic artefacts ─────────────────────────────────────────────
+    ("PST/OST",      "pst",   b"\x21\x42\x44\x4e",              None,                   500 * _MB,  "email"),
+    ("mbox",         "mbox",  b"From ",                          None,                    10 * _MB,  "email"),
+    # ── video ──────────────────────────────────────────────────────────────────
+    ("MP4/ISO",      "mp4",   b"\x00\x00\x00\x18ftypMP42",      None,                   500 * _MB,  "video"),
+    ("MP4-isom",     "mp4",   b"\x00\x00\x00\x20ftypisom",      None,                   500 * _MB,  "video"),
+    ("AVI",          "avi",   b"RIFF",                           None,                   500 * _MB,  "video"),
+    # ── audio ──────────────────────────────────────────────────────────────────
+    ("MP3-ID3",      "mp3",   b"ID3",                            None,                    20 * _MB,  "audio"),
+    ("WAV",          "wav",   b"RIFF",                           None,                    50 * _MB,  "audio"),
+    # ── scripts / text ─────────────────────────────────────────────────────────
+    ("UTF8-BOM",     "txt",   b"\xef\xbb\xbf",                  None,                     1 * _MB,  "text"),
+    ("XML-decl",     "xml",   b"<?xml version",                 b"</",                    5 * _MB,  "text"),
+    ("Shell-script", "sh",    b"#!/bin/sh",                     None,                     1 * _MB,  "text"),
+    ("Bash-script",  "sh",    b"#!/bin/bash",                   None,                     1 * _MB,  "text"),
+    ("Python-script","py",    b"#!/usr/bin/python",             None,                     1 * _MB,  "text"),
+]
+
+# Human-readable groups shown in the UI
+CARVE_GROUPS = {
+    "image":      "Images (JPEG, PNG, GIF, BMP, TIFF, WEBP)",
+    "document":   "Documents (PDF, DOCX, XLSX, DOC, RTF)",
+    "executable": "Executables (ELF, Mach-O)",
+    "database":   "Databases (SQLite)",
+    "archive":    "Archives (ZIP, GZIP, 7z, BZIP2, XZ)",
+    "email":      "Email & Outlook (PST, mbox)",
+    "video":      "Video (MP4, AVI)",
+    "audio":      "Audio (MP3, WAV)",
+    "text":       "Scripts & Text (shell, Python, XML)",
+}
+
+
+def _scan_for_signature(raw_path: str, header: bytes, max_count: int) -> List[int]:
+    """Return sorted list of absolute byte offsets where `header` starts in the raw file."""
+    h_len = len(header)
+    overlap = h_len - 1
+    offsets: List[int] = []
+    file_pos = 0   # absolute file position of chunk[0] in the current iteration
+    tail = b""
+
+    with open(raw_path, "rb") as fh:
+        while len(offsets) < max_count:
+            chunk = fh.read(_CARVE_CHUNK)
+            if not chunk:
+                break
+
+            window = tail + chunk
+            # window[i] is at absolute file position: (file_pos - len(tail)) + i
+            win_base = file_pos - len(tail)
+
+            p = 0
+            while True:
+                i = window.find(header, p)
+                if i < 0:
+                    break
+                abs_off = win_base + i
+                # Deduplicate: only record strictly new offsets (handles overlap re-detection)
+                if not offsets or abs_off > offsets[-1]:
+                    offsets.append(abs_off)
+                    if len(offsets) >= max_count:
+                        break
+                p = i + 1
+
+            file_pos += len(chunk)
+            tail = chunk[-overlap:] if overlap > 0 else b""
+
+    return offsets
+
+
+def _carve_one(raw_path: str, offset: int, sig_tuple: tuple, out_path: str) -> int:
+    """Extract one carved artefact starting at `offset`.  Returns bytes written."""
+    _name, _ext, header, footer, max_size, _group = sig_tuple
+    with open(raw_path, "rb") as fh:
+        fh.seek(offset)
+        data = fh.read(max_size)
+
+    if footer and len(data) > len(footer):
+        end = data.find(footer)
+        if end != -1:
+            data = data[:end + len(footer)]
+
+    # Sanity: must start with the header we expected
+    if not data.startswith(header):
+        raise ValueError("extracted data does not start with expected header")
+
+    with open(out_path, "wb") as fout:
+        fout.write(data)
+    return len(data)
+
+
+def carve_files(
+    fs: "FilesystemAccessor",
+    output_dir: str,
+    sig_groups: Optional[List[str]] = None,
+    max_files: int = 200,
+    max_scan_bytes: int = 2 * 1024 * 1024 * 1024,  # 2 GB scan ceiling
+) -> List[Dict]:
+    """Signature-based file carving from a raw disk image.
+
+    Scans raw bytes looking for file magic bytes regardless of whether
+    any inode metadata exists.  Works even on totally wiped partition tables.
+
+    Args:
+        fs:            FilesystemAccessor in TSK mode.
+        output_dir:    Directory to write carved files into.
+        sig_groups:    Optional list of group keys to restrict scanning
+                       (e.g. ["image", "document"]).  None = all groups.
+        max_files:     Hard cap on total carved files.
+        max_scan_bytes: Stop scanning after this many image bytes (safety cap).
+
+    Returns:
+        List of finding dicts compatible with DeletedFinding.
+    """
+    if fs.mode != "tsk":
+        return [_base_finding("", "carve_skip",
+                              "File carving requires a disk image (TSK mode); "
+                              "not applicable to a live mounted directory.", "info")]
+
+    os.makedirs(output_dir, exist_ok=True)
+    raw_path = fs.path
+
+    # Check image size so we can warn if truncating
+    try:
+        img_size = os.path.getsize(raw_path)
+    except Exception:
+        img_size = 0
+    scanning_truncated = img_size > max_scan_bytes
+
+    # Filter signatures to requested groups
+    active_sigs = [
+        s for s in CARVE_SIGNATURES
+        if sig_groups is None or s[5] in sig_groups
+    ]
+    if not active_sigs:
+        return [_base_finding("", "carve_error", "No signatures selected.", "info")]
+
+    findings: list = []
+    counter = 0
+    seen_offsets: set = set()   # avoid extracting RIFF-based types twice at same offset
+
+    for sig in active_sigs:
+        if counter >= max_files:
+            break
+
+        name, ext, header, footer, max_size, group = sig
+        per_sig_limit = min(50, max_files - counter)
+
+        try:
+            offsets = _scan_for_signature(raw_path, header, per_sig_limit)
+        except Exception as exc:
+            findings.append(_base_finding(
+                raw_path, "carve_error",
+                f"Scan error for {name}: {exc}", "info",
+            ))
+            continue
+
+        for off in offsets:
+            if counter >= max_files:
+                break
+            if scanning_truncated and off >= max_scan_bytes:
+                break
+
+            # Some headers (e.g. RIFF) are shared by WEBP/WAV/AVI — skip dupes
+            if off in seen_offsets:
+                continue
+            seen_offsets.add(off)
+
+            fname = f"carved_{group}_{name.lower().replace('/', '-')}_{counter:04d}.{ext}"
+            out_path = os.path.join(output_dir, fname)
+
+            try:
+                size = _carve_one(raw_path, off, sig, out_path)
+            except Exception as exc:
+                findings.append(_base_finding(
+                    out_path, "carve_error",
+                    f"Failed to carve {name} at offset {off:#010x}: {exc}", "info",
+                ))
+                continue
+
+            finding = _base_finding(
+                out_path, "carved",
+                f"Carved {name} at disk offset {off:#010x} ({_fmt_size(size)})",
+                "medium",
+            )
+            finding.update({
+                "size": size,
+                "recoverable": True,
+                "recovery_hint": f"Carved from offset {off:#010x} in image",
+                "recovery_id": f"carved:{out_path}",
+                # Re-use inode field for the raw disk offset (useful for analysts)
+                "inode": off,
+            })
+            findings.append(finding)
+            counter += 1
+
+    if scanning_truncated:
+        findings.append(_base_finding(
+            raw_path, "carve_info",
+            f"Scan capped at {_fmt_size(max_scan_bytes)} of "
+            f"{_fmt_size(img_size)} image; increase limit for full coverage.",
+            "info",
+        ))
+
+    if not any(f["type"] == "carved" for f in findings):
+        findings.append(_base_finding(
+            output_dir, "carve_info",
+            "No matching file signatures found in scanned region.", "info",
+        ))
+
+    return findings

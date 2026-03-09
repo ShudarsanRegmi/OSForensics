@@ -45,6 +45,8 @@ const apiCaseDelete  = (id)              => fetch(`${API}/cases/${id}`, { method
 const apiCaseAnalyze = (caseId, imgPath) => post(`/cases/${caseId}/analyze`, { image_path: imgPath });
 const apiCaseDelSrc  = (caseId, srcId)   => fetch(`${API}/cases/${caseId}/sources/${srcId}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
 const apiRecover     = (img, recoveryId) => post("/deleted/recover", { image_path: img, recovery_id: recoveryId });
+const apiCarveGroups = ()                => get("/deleted/carve/groups");
+const apiCarve       = (img, opts)       => post("/deleted/carve", { image_path: img, ...opts });
 
 // ─── Severity / icon helpers ──────────────────────────────────────────────────
 const SEV_COLOR = { critical: "#7f1d1d", high: "#dc2626", medium: "#d97706", low: "#16a34a", info: "#2563eb" };
@@ -1953,14 +1955,200 @@ function DelRow({ f, imgPath }) {
   );
 }
 
+// ── File Carving Panel ────────────────────────────────────────────────────────
+
+const CARVE_GROUP_ICONS = {
+  image:      HardDrive,
+  document:   FileText,
+  executable: Terminal,
+  database:   Database,
+  archive:    Package,
+  email:      BookOpen,
+  video:      Activity,
+  audio:      Activity,
+  text:       Code,
+};
+
+function CarvingPanel({ imgPath }) {
+  const [groups,     setGroups]     = useState(null);    // {id: label} map from API
+  const [selected,   setSelected]   = useState([]);       // group keys chosen by user
+  const [maxFiles,   setMaxFiles]   = useState(200);
+  const [maxScanGb,  setMaxScanGb]  = useState(2);
+  const [outDir,     setOutDir]     = useState("");
+  const [status,     setStatus]     = useState("idle");   // idle|loading-groups|carving|done|err
+  const [results,    setResults]    = useState(null);
+  const [error,      setError]      = useState("");
+
+  // Load group list once
+  useEffect(() => {
+    setStatus("loading-groups");
+    apiCarveGroups()
+      .then(r => { setGroups(r.groups); setSelected(Object.keys(r.groups)); setStatus("idle"); })
+      .catch(() => { setGroups({}); setStatus("idle"); });
+  }, []);
+
+  const toggleGroup = (k) =>
+    setSelected(s => s.includes(k) ? s.filter(x => x !== k) : [...s, k]);
+
+  const startCarving = async () => {
+    setStatus("carving");
+    setResults(null);
+    setError("");
+    try {
+      const r = await apiCarve(imgPath, {
+        sig_groups: selected.length ? selected : null,
+        max_files: Math.max(1, Math.min(500, maxFiles)),
+        max_scan_gb: Math.max(0.1, Math.min(50, maxScanGb)),
+        output_dir: outDir.trim() || undefined,
+      });
+      setResults(r);
+      setStatus("done");
+    } catch (e) {
+      setError(e.message || "Carving failed");
+      setStatus("err");
+    }
+  };
+
+  const carved = results?.carved?.filter(f => f.type === "carved") ?? [];
+  const info   = results?.carved?.filter(f => f.type !== "carved") ?? [];
+
+  return (
+    <div className="carve-panel">
+      <div className="carve-panel-header">
+        <HardDrive size={14} style={{ color: "#7c3aed" }} />
+        <span className="carve-title">File Carving</span>
+        <span className="carve-subtitle">
+          Scan raw disk sectors for file signatures — recovers deleted files even when
+          all inode/directory metadata is wiped.
+        </span>
+        <span className="carve-badge">TSK image only</span>
+      </div>
+
+      {status !== "carving" && status !== "done" && (
+        <div className="carve-config">
+          {/* Signature group selector */}
+          <div className="carve-section-label">File types to carve:</div>
+          <div className="carve-groups">
+            {groups === null && <span className="carve-loading">Loading signatures…</span>}
+            {groups && Object.entries(groups).map(([k, label]) => {
+              const Icon = CARVE_GROUP_ICONS[k] || File;
+              const active = selected.includes(k);
+              return (
+                <button key={k} className={`carve-group-btn${active ? " active" : ""}`}
+                  onClick={() => toggleGroup(k)}>
+                  <Icon size={11} />{label}
+                  {active && <CheckCircle size={10} className="carve-check" />}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Numeric options */}
+          <div className="carve-opts">
+            <label className="carve-opt-lbl">
+              Max carved files
+              <input type="number" className="carve-num" value={maxFiles} min={1} max={500}
+                onChange={e => setMaxFiles(Number(e.target.value))} />
+            </label>
+            <label className="carve-opt-lbl">
+              Scan limit (GB)
+              <input type="number" className="carve-num" value={maxScanGb} min={0.1} max={50} step={0.5}
+                onChange={e => setMaxScanGb(Number(e.target.value))} />
+            </label>
+            <label className="carve-opt-lbl" style={{ flex: 2 }}>
+              Output directory <span className="carve-opt-hint">(leave blank for default /tmp/osforensics_recovery/carved)</span>
+              <input className="carve-path-inp" placeholder="/path/to/output/dir"
+                value={outDir} onChange={e => setOutDir(e.target.value)} />
+            </label>
+          </div>
+
+          <button className="carve-start-btn" disabled={!groups || selected.length === 0} onClick={startCarving}>
+            <HardDrive size={13} /> Start Carving
+          </button>
+        </div>
+      )}
+
+      {status === "carving" && (
+        <div className="carve-progress">
+          <RefreshCw size={20} className="spin" style={{ color: "#7c3aed" }} />
+          <span>Scanning image for file signatures…  This may take several minutes for large images.</span>
+        </div>
+      )}
+
+      {status === "err" && (
+        <div className="carve-err">
+          <AlertTriangle size={14} /> {error}
+          <button className="del-rec-btn" style={{ marginLeft: 10 }} onClick={() => setStatus("idle")}>Try again</button>
+        </div>
+      )}
+
+      {status === "done" && (
+        <div className="carve-results">
+          <div className="carve-results-header">
+            <CheckCircle size={13} style={{ color: "#16a34a" }} />
+            <strong>{carved.length} file{carved.length !== 1 ? "s" : ""} carved</strong>
+            {results?.output_dir && (
+              <span className="carve-outdir">→ <code>{results.output_dir}</code></span>
+            )}
+            <button className="del-rec-btn" style={{ marginLeft: "auto" }}
+              onClick={() => { setStatus("idle"); setResults(null); }}>
+              Carve Again
+            </button>
+          </div>
+
+          {/* Info / warning messages */}
+          {info.map((f, i) => (
+            <div key={i} className="carve-info-row">
+              <Info size={11} style={{ flexShrink: 0 }} /> {f.detail}
+            </div>
+          ))}
+
+          {/* Carved files table */}
+          {carved.length > 0 && (
+            <table className="carve-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Type / Offset</th>
+                  <th>Size</th>
+                  <th>Saved As</th>
+                </tr>
+              </thead>
+              <tbody>
+                {carved.map((f, i) => {
+                  const offset = f.inode != null ? `0x${f.inode.toString(16).padStart(8,"0")}` : "—";
+                  const fname = f.path.split("/").pop();
+                  return (
+                    <tr key={i}>
+                      <td className="carve-td-num">{i + 1}</td>
+                      <td>
+                        <div className="carve-type-cell">
+                          <span className="carve-type-badge">{fname.split("_")[1]?.toUpperCase() || "?"}</span>
+                          <code className="carve-offset">{offset}</code>
+                        </div>
+                      </td>
+                      <td className="carve-td-size">{fmtBytes(f.size) || "—"}</td>
+                      <td><code className="del-path" style={{ fontSize: 10 }}>{f.path}</code></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DeletedTab({ findings = [], imgPath }) {
   const [search,      setSearch]      = useState("");
   const [filterSev,   setFilterSev]   = useState("all");
   const [filterType,  setFilterType]  = useState("all");
   const [recOnly,     setRecOnly]     = useState(false);
 
-  if (findings.length === 0)
-    return <EmptyState icon={Eye} message="No deleted files or anti-forensics indicators found." />;
+  // Determine if we have a disk image (not live root) — carving only makes sense then
+  const isImage = imgPath && imgPath !== "/" && !imgPath.endsWith("/");
 
   const types = [...new Set(findings.map(f => f.type))];
   const filtered = findings.filter(f => {
@@ -1988,60 +2176,69 @@ function DeletedTab({ findings = [], imgPath }) {
 
   return (
     <div className="tab-content">
-      {/* Summary bar */}
-      <div className="del-summary-bar">
-        <span className="del-sum-chip neutral"><Eye size={11} /> {findings.length} findings</span>
-        <span className="del-sum-chip green"><CheckCircle size={11} /> {nRecoverable} recoverable</span>
-        <span className="del-sum-chip red"><AlertTriangle size={11} /> {nHigh} high severity</span>
-      </div>
+      {findings.length === 0 ? (
+        <EmptyState icon={Eye} message="No deleted files or anti-forensics indicators found." />
+      ) : (
+        <>
+          {/* Summary bar */}
+          <div className="del-summary-bar">
+            <span className="del-sum-chip neutral"><Eye size={11} /> {findings.length} findings</span>
+            <span className="del-sum-chip green"><CheckCircle size={11} /> {nRecoverable} recoverable</span>
+            <span className="del-sum-chip red"><AlertTriangle size={11} /> {nHigh} high severity</span>
+          </div>
 
-      {/* Filter bar */}
-      <div className="del-filter-bar">
-        <div className="del-search-wrap">
-          <Search size={12} className="del-search-icon" />
-          <input className="del-search" placeholder="Search path, detail or command…"
-            value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <select className="del-select" value={filterSev} onChange={e => setFilterSev(e.target.value)}>
-          <option value="all">All Severities</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="info">Info</option>
-        </select>
-        <select className="del-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
-          <option value="all">All Types</option>
-          {types.map(t => <option key={t} value={t}>{DEL_TYPE_META[t]?.label || t}</option>)}
-        </select>
-        <label className="del-toggle-lbl">
-          <input type="checkbox" checked={recOnly} onChange={e => setRecOnly(e.target.checked)} />
-          Recoverable only
-        </label>
-      </div>
+          {/* Filter bar */}
+          <div className="del-filter-bar">
+            <div className="del-search-wrap">
+              <Search size={12} className="del-search-icon" />
+              <input className="del-search" placeholder="Search path, detail or command…"
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <select className="del-select" value={filterSev} onChange={e => setFilterSev(e.target.value)}>
+              <option value="all">All Severities</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="info">Info</option>
+            </select>
+            <select className="del-select" value={filterType} onChange={e => setFilterType(e.target.value)}>
+              <option value="all">All Types</option>
+              {types.map(t => <option key={t} value={t}>{DEL_TYPE_META[t]?.label || t}</option>)}
+            </select>
+            <label className="del-toggle-lbl">
+              <input type="checkbox" checked={recOnly} onChange={e => setRecOnly(e.target.checked)} />
+              Recoverable only
+            </label>
+          </div>
 
-      {filtered.length === 0 && (
-        <div className="empty-state" style={{ padding: "40px 20px" }}>
-          <Search size={28} style={{ color: "var(--fg-muted)", marginBottom: 8 }} />
-          <p>No results match the current filter.</p>
-        </div>
+          {filtered.length === 0 && (
+            <div className="empty-state" style={{ padding: "40px 20px" }}>
+              <Search size={28} style={{ color: "var(--fg-muted)", marginBottom: 8 }} />
+              <p>No results match the current filter.</p>
+            </div>
+          )}
+
+          {Object.entries(byType).map(([type, items]) => {
+            const m = DEL_TYPE_META[type] || { label: type, Icon: Eye, color: "#6b7280", desc: "" };
+            const TypeIcon = m.Icon;
+            return (
+              <div key={type} className="del-group" style={{ borderTop: `3px solid ${m.color}` }}>
+                <div className="del-group-header">
+                  <TypeIcon size={13} style={{ color: m.color }} />
+                  <span>{m.label}</span>
+                  <span className="del-count">{items.length}</span>
+                  {m.desc && <span className="del-group-desc">{m.desc}</span>}
+                </div>
+                <div className="del-list">
+                  {items.map((f, i) => <DelRow key={i} f={f} imgPath={imgPath} />)}
+                </div>
+              </div>
+            );
+          })}
+        </>
       )}
 
-      {Object.entries(byType).map(([type, items]) => {
-        const m = DEL_TYPE_META[type] || { label: type, Icon: Eye, color: "#6b7280", desc: "" };
-        const TypeIcon = m.Icon;
-        return (
-          <div key={type} className="del-group" style={{ borderTop: `3px solid ${m.color}` }}>
-            <div className="del-group-header">
-              <TypeIcon size={13} style={{ color: m.color }} />
-              <span>{m.label}</span>
-              <span className="del-count">{items.length}</span>
-              {m.desc && <span className="del-group-desc">{m.desc}</span>}
-            </div>
-            <div className="del-list">
-              {items.map((f, i) => <DelRow key={i} f={f} imgPath={imgPath} />)}
-            </div>
-          </div>
-        );
-      })}
+      {/* File Carving section — always shown when we have a disk image */}
+      {isImage && <CarvingPanel imgPath={imgPath} />}
     </div>
   );
 }
