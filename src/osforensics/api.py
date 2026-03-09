@@ -4,13 +4,14 @@ The endpoint /analyze accepts JSON with an `image_path` pointing to either
 an on-disk mounted directory (for development) or a disk image file (dd, etc.).
 
 Extended endpoints:
-  POST /analyze           – full analysis (tools + timeline + deleted + persistence + config + services)
+  POST /analyze           – full analysis (tools + timeline + deleted + persistence + config + services + browsers)
   POST /upload            – upload a disk image, analyse, then delete temporary file
   POST /timeline          – timeline-only scan for a given path
   POST /deleted           – deleted-file scan for a given path
   POST /persistence       – persistence-mechanism scan for a given path
   POST /config            – configuration-file audit for a given path
   POST /services          – service detection and enumeration for a given path
+  POST /browsers          – browser forensics (history, bookmarks, cookies, extensions …)
 
 Explorer endpoints (Autopsy-style navigation):
   POST /explore/tree      – static artifact category tree
@@ -30,6 +31,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from .browser import detect_browsers
 from .cases import (
     list_cases, create_case, get_case, update_case, delete_case,
     add_data_source, remove_data_source,
@@ -79,8 +81,10 @@ def _full_analysis(fs: FilesystemAccessor) -> dict:
     persistence = detect_persistence(fs)
     config     = analyze_configs(fs)
     services   = detect_services(fs)
+    browsers   = detect_browsers(fs)
     report = build_report(os_info, classified, timeline=timeline, deleted=deleted,
-                          persistence=persistence, config=config, services=services)
+                          persistence=persistence, config=config, services=services,
+                          browsers=browsers)
     return report.dict()
 
 
@@ -183,6 +187,19 @@ def services_scan(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail=str(e))
     try:
         return {"services": detect_services(fs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/browsers")
+def browser_scan(req: AnalyzeRequest):
+    """Return browser forensics findings for the given path."""
+    try:
+        fs = FilesystemAccessor(req.image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        return {"browsers": detect_browsers(fs)}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
 

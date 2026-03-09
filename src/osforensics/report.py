@@ -62,6 +62,26 @@ class ConfigFinding(BaseModel):
     recommendation: str = ""
 
 
+# ── Browser forensics models ─────────────────────────────────────────────────
+
+class BrowserProfile(BaseModel):
+    browser: str
+    browser_label: str
+    user: str
+    profile: str
+    profile_path: str
+    severity: str = "info"
+    flags: List[str] = []
+    history: List[Dict[str, Any]] = []
+    downloads: List[Dict[str, Any]] = []
+    bookmarks: List[Dict[str, Any]] = []
+    cookies: List[Dict[str, Any]] = []
+    extensions: List[Dict[str, Any]] = []
+    logins: List[Dict[str, Any]] = []
+    search_terms: List[Dict[str, Any]] = []
+    autofill: List[Dict[str, Any]] = []
+
+
 # ── Service detection models ──────────────────────────────────────────────────
 
 class ServiceFinding(BaseModel):
@@ -89,6 +109,7 @@ class ForensicReport(BaseModel):
     persistence: List[PersistenceFinding] = []
     config: List[ConfigFinding] = []
     services: List[ServiceFinding] = []
+    browsers: List[BrowserProfile] = []
 
 
 def build_report(
@@ -99,6 +120,7 @@ def build_report(
     persistence: Optional[List[Dict]] = None,
     config: Optional[List[Dict]] = None,
     services: Optional[List[Dict]] = None,
+    browsers: Optional[List[Dict]] = None,
 ) -> ForensicReport:
     os_model = OSInfo(
         name=os_info.get("name"),
@@ -132,6 +154,10 @@ def build_report(
         ServiceFinding(**s) for s in (services or [])
     ]
 
+    browser_profiles = [
+        BrowserProfile(**b) for b in (browsers or [])
+    ]
+
     high_timeline  = sum(1 for e in timeline_events  if e.severity == "high")
     high_deleted   = sum(1 for d in deleted_findings  if d.severity == "high")
     high_persist   = sum(1 for p in persistence_findings if p.severity == "high")
@@ -154,7 +180,9 @@ def build_report(
         "service_count":       len(service_findings),
         "high_services":       high_services,
         "enabled_services":    sum(1 for s in service_findings if s.state == "enabled"),
-        "total_high":          sum(1 for f in tool_findings if f.risk == "high") + high_timeline + high_deleted + high_persist + high_config + high_services,
+        "browser_count":       len(browser_profiles),
+        "high_browsers":       sum(1 for b in browser_profiles if b.severity in ("high", "critical")),
+        "total_high":          sum(1 for f in tool_findings if f.risk == "high") + high_timeline + high_deleted + high_persist + high_config + high_services + sum(1 for b in browser_profiles if b.severity in ("high", "critical")),
     }
 
     return ForensicReport(
@@ -166,4 +194,5 @@ def build_report(
         persistence=persistence_findings,
         config=config_findings,
         services=service_findings,
+        browsers=browser_profiles,
     )

@@ -2284,6 +2284,374 @@ function ServicesTab({ services = [] }) {
   );
 }
 
+// ─── Browser Forensics Tab ────────────────────────────────────────────────────
+
+const BROWSER_META = {
+  chrome:    { label: "Google Chrome",  color: "#4285f4" },
+  chromium:  { label: "Chromium",       color: "#2563eb" },
+  brave:     { label: "Brave",          color: "#fb542b" },
+  edge:      { label: "Microsoft Edge", color: "#0078d4" },
+  opera:     { label: "Opera",          color: "#ff1b2d" },
+  vivaldi:   { label: "Vivaldi",        color: "#ef3939" },
+  yandex:    { label: "Yandex",         color: "#ffcc00" },
+  firefox:   { label: "Firefox",        color: "#ff9500" },
+  waterfox:  { label: "Waterfox",       color: "#00acda" },
+  librewolf: { label: "LibreWolf",      color: "#00adef" },
+  icecat:    { label: "GNU IceCat",     color: "#5b9bd5" },
+  tor:       { label: "Tor Browser",    color: "#7d4698" },
+};
+
+const BW_ARTIFACT_TABS = [
+  { id: "history",      label: "History",     emptyMsg: "No history found."      },
+  { id: "downloads",    label: "Downloads",   emptyMsg: "No downloads found."    },
+  { id: "bookmarks",    label: "Bookmarks",   emptyMsg: "No bookmarks found."    },
+  { id: "cookies",      label: "Cookies",     emptyMsg: "No cookies found."      },
+  { id: "extensions",   label: "Extensions",  emptyMsg: "No extensions found."   },
+  { id: "logins",       label: "Logins",      emptyMsg: "No saved logins found." },
+  { id: "search_terms", label: "Searches",    emptyMsg: "No search terms found." },
+  { id: "autofill",     label: "Autofill",    emptyMsg: "No autofill data found."},
+];
+
+const BW_FLAG_LABELS = {
+  "saved-passwords":      "Saved passwords",
+  "suspicious-downloads": "Suspicious downloads",
+  "suspicious-history":   "Suspicious history",
+  "suspicious-extensions":"Suspicious extensions",
+  "suspicious-searches":  "Suspicious searches",
+  "wiped-history":        "History wiped",
+  "credential-store":     "Credential store present",
+  "saved-credentials":    "Saved credentials",
+  "executable":           "Executable file",
+  "suspicious-url":       "Suspicious URL",
+  "suspicious-search":    "Suspicious search",
+  "not-secure":           "Non-secure flag",
+  "not-httponly":         "Missing HttpOnly",
+  "unsigned":             "Unsigned extension",
+};
+
+function BwFlagChip({ flag }) {
+  const label = BW_FLAG_LABELS[flag] || flag.replace(/^perm:/, "perm: ");
+  const isHigh = ["saved-passwords","saved-credentials","suspicious-searches","suspicious-extensions","wiped-history"].includes(flag)
+    || flag.startsWith("perm:") && ["<all_urls>","*://*/*","webRequestBlocking","proxy","nativeMessaging","debugger","management"].some(p => flag.includes(p));
+  const isMed = ["suspicious-downloads","suspicious-history","suspicious-url","credential-store","executable","unsigned"].includes(flag)
+    || flag.startsWith("perm:");
+  const style = isHigh
+    ? { background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca" }
+    : isMed
+    ? { background: "#fff7ed", color: "#92400e", border: "1px solid #fed7aa" }
+    : { background: "var(--bg-hover)", color: "var(--fg-muted)", border: "1px solid var(--border-lt)" };
+  return <span className="bw-flag-chip" style={style}>{label}</span>;
+}
+
+/* ── Artifact-type sub-tables ─────────────────────── */
+
+function BwHistoryTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.url?.toLowerCase().includes(search) || r.title?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>URL / Title</th><th>Visits</th><th>Last Visit</th><th>Flags</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i} className={r.severity !== "info" ? "bw-row-flagged" : ""}>
+              <td className="bw-url-cell">
+                <div className="bw-url">{r.url}</div>
+                {r.title && <div className="bw-subtitle">{r.title}</div>}
+              </td>
+              <td className="bw-num">{r.visit_count || "—"}</td>
+              <td className="bw-ts">{r.last_visit || "—"}</td>
+              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BwDownloadsTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.url?.toLowerCase().includes(search) || r.target_path?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>Source URL</th><th>Target Path</th><th>MIME / Size</th><th>Started</th><th>Flags</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i} className={r.severity !== "info" ? "bw-row-flagged" : ""}>
+              <td className="bw-url-cell"><div className="bw-url">{r.url || "—"}</div></td>
+              <td className="bw-url-cell"><div className="bw-mono">{r.target_path || "—"}</div></td>
+              <td className="bw-ts">{r.mime_type || "—"}{r.total_bytes > 0 && ` · ${(r.total_bytes/1024).toFixed(0)} KB`}</td>
+              <td className="bw-ts">{r.start_time || "—"}</td>
+              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BwBookmarksTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.url?.toLowerCase().includes(search) || r.title?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>Title</th><th>URL</th><th>Folder</th><th>Added</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i}>
+              <td>{r.title || "—"}</td>
+              <td className="bw-url-cell"><div className="bw-url">{r.url}</div></td>
+              <td className="bw-ts">{r.folder || "—"}</td>
+              <td className="bw-ts">{r.date_added || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BwCookiesTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.host?.toLowerCase().includes(search) || r.name?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>Host</th><th>Name</th><th>Secure</th><th>HttpOnly</th><th>Expires</th><th>Flags</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i} className={r.severity !== "info" ? "bw-row-flagged" : ""}>
+              <td className="bw-mono">{r.host}</td>
+              <td className="bw-mono">{r.name}</td>
+              <td className="bw-center">{r.is_secure ? "✓" : <span style={{color:"#dc2626"}}>✗</span>}</td>
+              <td className="bw-center">{r.is_httponly ? "✓" : <span style={{color:"#dc2626"}}>✗</span>}</td>
+              <td className="bw-ts">{r.expires || "session"}</td>
+              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BwExtensionsTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.name?.toLowerCase().includes(search) || r.id?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>Name</th><th>ID</th><th>Version</th><th>Risk Permissions</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i} className={r.severity !== "info" ? "bw-row-flagged" : ""}>
+              <td>
+                <div style={{fontWeight: 600}}>{r.name}</div>
+                {r.description && <div className="bw-subtitle">{r.description}</div>}
+                <SevBadge sev={r.severity} />
+              </td>
+              <td className="bw-mono" style={{fontSize:10}}>{r.id}</td>
+              <td className="bw-ts">{r.version || "—"}</td>
+              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BwLoginsTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.origin?.toLowerCase().includes(search) || r.username?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>Origin URL</th><th>Username</th><th>Created</th><th>Used</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i} className="bw-row-flagged">
+              <td className="bw-url-cell"><div className="bw-url">{r.origin || "—"}</div></td>
+              <td className="bw-mono">{r.username || "—"}</td>
+              <td className="bw-ts">{r.date_created || "—"}</td>
+              <td className="bw-num">{r.times_used ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BwSearchesTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.term?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>Search Term</th><th>Source</th><th>Flags</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i} className={r.severity === "high" ? "bw-row-flagged" : ""}>
+              <td style={{fontWeight: r.severity === "high" ? 700 : 400}}>{r.term}</td>
+              <td className="bw-ts">{r.engine || "—"}</td>
+              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BwAutofillTable({ rows, search }) {
+  const vis = rows.filter(r => !search || r.field?.toLowerCase().includes(search) || r.value?.toLowerCase().includes(search));
+  if (!vis.length) return <div className="bw-empty">No entries match the filter.</div>;
+  return (
+    <div className="bw-table-wrap">
+      <table className="bw-table">
+        <thead><tr><th>Field Name</th><th>Value</th><th>Count</th></tr></thead>
+        <tbody>
+          {vis.map((r, i) => (
+            <tr key={i}>
+              <td className="bw-mono">{r.field}</td>
+              <td>{r.value}</td>
+              <td className="bw-num">{r.count}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BrowserProfileView({ profile }) {
+  const [artifactTab, setArtifactTab] = useState("history");
+  const [search, setSearch] = useState("");
+
+  const meta = BROWSER_META[profile.browser] || { label: profile.browser_label, color: "#6b7280" };
+  const counts = {
+    history:      (profile.history      || []).length,
+    downloads:    (profile.downloads    || []).length,
+    bookmarks:    (profile.bookmarks    || []).length,
+    cookies:      (profile.cookies      || []).length,
+    extensions:   (profile.extensions   || []).length,
+    logins:       (profile.logins       || []).length,
+    search_terms: (profile.search_terms || []).length,
+    autofill:     (profile.autofill     || []).length,
+  };
+  const q = search.toLowerCase();
+
+  return (
+    <div className="bw-profile-view">
+      {/* Profile header */}
+      <div className="bw-profile-header">
+        <span className="bw-browser-dot" style={{ background: meta.color }} />
+        <span className="bw-profile-title">
+          <strong>{meta.label}</strong>
+          <span className="bw-profile-sub"> / {profile.user} / {profile.profile}</span>
+        </span>
+        <SevBadge sev={profile.severity} />
+        {(profile.flags || []).map(f => <BwFlagChip key={f} flag={f} />)}
+      </div>
+
+      {/* Artifact sub-tabs */}
+      <div className="bw-artifact-tabbar">
+        {BW_ARTIFACT_TABS.map(({ id, label }) => (
+          <button key={id}
+            className={`bw-artifact-tab ${artifactTab === id ? "active" : ""}`}
+            onClick={() => { setArtifactTab(id); setSearch(""); }}>
+            {label}
+            {counts[id] > 0 && <span className="bw-art-count">{counts[id]}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div className="bw-artifact-search">
+        <input className="tl-search" placeholder="Filter…" value={search}
+          onChange={e => setSearch(e.target.value)} style={{ maxWidth: 280 }} />
+        <span className="bw-row-count">{counts[artifactTab]} item{counts[artifactTab] !== 1 ? "s" : ""}</span>
+      </div>
+
+      {/* Table */}
+      <div className="bw-artifact-body">
+        {artifactTab === "history"      && (counts.history      > 0 ? <BwHistoryTable    rows={profile.history}      search={q} /> : <div className="bw-empty">No history found.</div>     )}
+        {artifactTab === "downloads"    && (counts.downloads    > 0 ? <BwDownloadsTable  rows={profile.downloads}    search={q} /> : <div className="bw-empty">No downloads found.</div>   )}
+        {artifactTab === "bookmarks"    && (counts.bookmarks    > 0 ? <BwBookmarksTable  rows={profile.bookmarks}    search={q} /> : <div className="bw-empty">No bookmarks found.</div>   )}
+        {artifactTab === "cookies"      && (counts.cookies      > 0 ? <BwCookiesTable    rows={profile.cookies}      search={q} /> : <div className="bw-empty">No cookies found.</div>     )}
+        {artifactTab === "extensions"   && (counts.extensions   > 0 ? <BwExtensionsTable rows={profile.extensions}   search={q} /> : <div className="bw-empty">No extensions found.</div>  )}
+        {artifactTab === "logins"       && (counts.logins       > 0 ? <BwLoginsTable     rows={profile.logins}       search={q} /> : <div className="bw-empty">No saved logins found.</div>)}
+        {artifactTab === "search_terms" && (counts.search_terms > 0 ? <BwSearchesTable   rows={profile.search_terms} search={q} /> : <div className="bw-empty">No search terms found.</div>)}
+        {artifactTab === "autofill"     && (counts.autofill     > 0 ? <BwAutofillTable   rows={profile.autofill}     search={q} /> : <div className="bw-empty">No autofill data found.</div>)}
+      </div>
+    </div>
+  );
+}
+
+function BrowserTab({ browsers = [] }) {
+  const [selected, setSelected] = useState(0);
+
+  if (!browsers || browsers.length === 0)
+    return <EmptyState icon={Globe} message="No browser profiles detected." />;
+
+  const cur = browsers[selected] || browsers[0];
+
+  const totalHistory   = browsers.reduce((n, b) => n + (b.history      || []).length, 0);
+  const totalDownloads = browsers.reduce((n, b) => n + (b.downloads    || []).length, 0);
+  const totalLogins    = browsers.reduce((n, b) => n + (b.logins       || []).length, 0);
+  const totalExts      = browsers.reduce((n, b) => n + (b.extensions   || []).length, 0);
+
+  return (
+    <div className="bw-tab">
+      {/* Stats bar */}
+      <div className="bw-stats-bar">
+        <span className="bw-stat"><strong>{browsers.length}</strong> profile{browsers.length !== 1 ? "s" : ""}</span>
+        <span className="bw-stat"><strong>{totalHistory.toLocaleString()}</strong> history entries</span>
+        <span className="bw-stat"><strong>{totalDownloads}</strong> downloads</span>
+        {totalLogins > 0 && (
+          <span className="bw-stat" style={{ color: SEV_COLOR.high }}>
+            <Lock size={11} /><strong>{totalLogins}</strong> saved login{totalLogins !== 1 ? "s" : ""}
+          </span>
+        )}
+        <span className="bw-stat"><strong>{totalExts}</strong> extension{totalExts !== 1 ? "s" : ""}</span>
+      </div>
+
+      <div className="bw-layout">
+        {/* Sidebar: profile list */}
+        <div className="bw-sidebar">
+          {browsers.map((p, i) => {
+            const m = BROWSER_META[p.browser] || { label: p.browser_label, color: "#6b7280" };
+            return (
+              <button key={i}
+                className={`bw-profile-btn ${selected === i ? "active" : ""}`}
+                onClick={() => setSelected(i)}>
+                <span className="bw-browser-dot" style={{ background: m.color }} />
+                <div className="bw-profile-btn-text">
+                  <span className="bw-profile-btn-name">{m.label}</span>
+                  <span className="bw-profile-btn-sub">{p.user} · {p.profile}</span>
+                </div>
+                {p.severity !== "info" && (
+                  <span className="bw-sev-dot" style={{ background: SEV_COLOR[p.severity] || "#6b7280" }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Main content */}
+        <div className="bw-main">
+          <BrowserProfileView profile={cur} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const REPORT_TABS = [
   { id: "summary",     label: "Summary",     Icon: HardDrive },
   { id: "timeline",    label: "Timeline",    Icon: Clock     },
@@ -2291,6 +2659,7 @@ const REPORT_TABS = [
   { id: "persistence", label: "Persistence", Icon: Shield    },
   { id: "config",      label: "Config",      Icon: Settings  },
   { id: "services",    label: "Services",    Icon: Server    },
+  { id: "browsers",    label: "Browsers",    Icon: Globe     },
   { id: "tools",       label: "Tools",       Icon: Search    },
 ];
 
@@ -2303,6 +2672,7 @@ function ReportPanel({ report, onClear, onExport, onReanalyze, reanalyzing }) {
     persistence: summary?.high_persistence > 0 ? summary.high_persistence : null,
     config:      summary?.high_config      > 0 ? summary.high_config      : null,
     services:    summary?.high_services    > 0 ? summary.high_services    : null,
+    browsers:    summary?.high_browsers    > 0 ? summary.high_browsers    : null,
     tools:       summary?.high_risk_tools  > 0 ? summary.high_risk_tools  : null,
   };
   return (
@@ -2339,6 +2709,7 @@ function ReportPanel({ report, onClear, onExport, onReanalyze, reanalyzing }) {
         {tab === "persistence" && <PersistenceTab findings={report.persistence} />}
         {tab === "config"      && <ConfigTab      findings={report.config} />}
         {tab === "services"    && <ServicesTab    services={report.services} />}
+        {tab === "browsers"    && <BrowserTab     browsers={report.browsers} />}
         {tab === "tools"       && <ToolsTab       findings={report.findings} />}
       </div>
     </div>
