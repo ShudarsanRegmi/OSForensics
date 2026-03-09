@@ -39,6 +39,18 @@ class DeletedFinding(BaseModel):
     type: str
     detail: str
     severity: str = "medium"
+    # Extended forensic fields
+    inode: Optional[int] = None
+    size: Optional[int] = None
+    mtime: Optional[str] = None
+    atime: Optional[str] = None
+    ctime: Optional[str] = None
+    deleted_at: Optional[str] = None
+    recoverable: bool = False
+    recovery_hint: str = ""
+    recovery_id: str = ""
+    user: Optional[str] = None
+    command: Optional[str] = None
 
 
 # ── Persistence models ────────────────────────────────────────────────────────

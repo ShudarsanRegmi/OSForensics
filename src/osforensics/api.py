@@ -38,7 +38,7 @@ from .cases import (
 )
 from .classifier import classify_findings
 from .config import analyze_configs
-from .deleted import detect_deleted
+from .deleted import detect_deleted, recover_file, SAFE_RECOVERY_DIR
 from .detector import detect_os, detect_tools
 from .explorer import ARTIFACT_TREE, browse, stat_file, read_text
 from .extractor import FilesystemAccessor
@@ -56,6 +56,12 @@ class ExploreRequest(BaseModel):
     image_path: str
     path: str
     limit: Optional[int] = 200_000
+
+
+class RecoverRequest(BaseModel):
+    image_path: str
+    recovery_id: str
+    output_dir: Optional[str] = None
 
 
 app = FastAPI(title="OS Forensics API")
@@ -148,6 +154,28 @@ def deleted_scan(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail=str(e))
     try:
         return {"deleted": detect_deleted(fs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/deleted/recover")
+def deleted_recover(req: RecoverRequest):
+    """Attempt to recover a single deleted file identified by recovery_id."""
+    # Validate output_dir if provided (prevent path traversal to system dirs)
+    if req.output_dir is not None:
+        out_dir = os.path.abspath(req.output_dir)
+        blocked = ("/", "/etc", "/bin", "/sbin", "/usr", "/lib",
+                   "/boot", "/proc", "/sys", "/dev", "/root")
+        if out_dir in blocked:
+            raise HTTPException(status_code=400, detail="Unsafe output directory")
+    else:
+        out_dir = SAFE_RECOVERY_DIR
+    try:
+        fs = FilesystemAccessor(req.image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    try:
+        return recover_file(fs, req.recovery_id, out_dir)
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
 
