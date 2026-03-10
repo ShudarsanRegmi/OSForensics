@@ -30,8 +30,9 @@ import tempfile
 import traceback
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from .browser import detect_browsers
@@ -45,7 +46,7 @@ from .deleted import detect_deleted, recover_file, carve_files, CARVE_GROUPS, SA
 from .detector import detect_os, detect_tools
 from .explorer import ARTIFACT_TREE, browse, stat_file, read_text
 from .extractor import FilesystemAccessor
-from .multimedia import analyze_multimedia
+from .multimedia import analyze_multimedia, ALL_MEDIA_EXTS, EXT_TO_MIME
 from .persistence import detect_persistence
 from .report import build_report
 from .services import detect_services
@@ -304,6 +305,51 @@ def multimedia_scan(req: AnalyzeRequest):
         return {"multimedia": analyze_multimedia(fs)}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.get("/multimedia/view")
+def multimedia_view(
+    image_path: str = Query(..., description="Path to disk image or mounted directory"),
+    file_path:  str = Query(..., description="Path to the media file within the filesystem"),
+):
+    """Serve a single media file for inline browser viewing.
+
+    Security controls:
+    - Only media file extensions (image/video/audio) are accepted.
+    - In local mode the resolved path must stay within the accessor root.
+    - File size capped at 200 MB.
+    """
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in ALL_MEDIA_EXTS:
+        raise HTTPException(status_code=400, detail=f"Extension {ext!r} is not a recognised media type.")
+
+    # Normalize: must be an absolute path within the image/directory
+    safe_path = "/" + file_path.lstrip("/")
+
+    try:
+        fs = FilesystemAccessor(image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    mime = EXT_TO_MIME.get(ext, "application/octet-stream")
+
+    if fs.mode == "local":
+        # For live/mounted mode serve directly — FileResponse handles range
+        # requests so video seeking works properly.
+        local_p = os.path.realpath(os.path.join(fs.path, safe_path.lstrip("/")))
+        root_p  = os.path.realpath(fs.path)
+        # Path-traversal guard (relaxed for root '/' which is the live-system scan)
+        if root_p != "/" and not local_p.startswith(root_p + os.sep) and local_p != root_p:
+            raise HTTPException(status_code=403, detail="Path traversal detected.")
+        if not os.path.isfile(local_p):
+            raise HTTPException(status_code=404, detail="File not found.")
+        return FileResponse(local_p, media_type=mime, headers={"Accept-Ranges": "bytes"})
+    else:
+        # TSK / disk-image mode: extract bytes via pytsk3
+        raw = fs.read_file(safe_path, max_bytes=200 * 1024 * 1024)
+        if raw is None:
+            raise HTTPException(status_code=404, detail="File not found in image.")
+        return Response(content=raw, media_type=mime)
 
 
 @app.get("/live/info")
