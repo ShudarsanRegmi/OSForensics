@@ -3985,3 +3985,119 @@ kbd {
   font-size: 11px;
   color: var(--fg-muted);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Media Viewer Modal  (.mv-*)
+   ───────────────────────────────────────────────────────────────────────────── */
+.mv-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(0,0,0,.78);
+  display: flex; align-items: center; justify-content: center;
+}
+.mv-modal {
+  position: relative;
+  display: flex; flex-direction: column;
+  width: min(96vw, 1100px);
+  max-height: 94vh;
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border, #2d2d3f);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,.7);
+}
+/* Header */
+.mv-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-sidebar, #12122a);
+  border-bottom: 1px solid var(--border, #2d2d3f);
+  flex-shrink: 0;
+}
+.mv-fname {
+  font-weight: 600; font-size: 13px;
+  color: var(--fg, #e2e8f0);
+  white-space: nowrap;
+}
+.mv-path {
+  font-size: 10px; color: var(--fg-muted, #8892a4);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0;
+}
+.mv-header-actions {
+  display: flex; align-items: center; gap: 6px; margin-left: 8px; flex-shrink: 0;
+}
+.mv-download-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 5px;
+  background: var(--accent-muted, #1e3a5f); color: var(--accent, #60a5fa);
+  font-size: 11px; font-weight: 500; text-decoration: none; white-space: nowrap;
+  border: 1px solid var(--accent, #60a5fa);
+  transition: background .15s;
+}
+.mv-download-btn:hover { background: var(--accent, #60a5fa); color: #fff; }
+.mv-close {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 5px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--fg-muted, #8892a4);
+  transition: background .15s, color .15s;
+}
+.mv-close:hover { background: #dc2626; color: #fff; }
+/* Content */
+.mv-content-wrap {
+  display: flex; flex: 1; overflow: hidden; position: relative;
+}
+.mv-content {
+  flex: 1; overflow: auto;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 240px; padding: 12px;
+}
+.mv-img {
+  max-width: 100%; max-height: 72vh;
+  object-fit: contain; border-radius: 4px;
+  image-rendering: auto;
+}
+.mv-video {
+  max-width: 100%; max-height: 72vh;
+  border-radius: 4px; background: #000;
+}
+.mv-audio-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 14px; padding: 32px 16px;
+}
+.mv-audio-icon { color: var(--fg-muted, #8892a4); }
+.mv-audio-fname { font-size: 14px; font-weight: 600; color: var(--fg, #e2e8f0); }
+.mv-audio { width: 360px; max-width: 90vw; }
+/* Side nav arrows */
+.mv-side-btn {
+  flex-shrink: 0; width: 40px;
+  background: transparent; border: none; cursor: pointer;
+  font-size: 36px; line-height: 1; color: rgba(255,255,255,.4);
+  transition: color .15s, background .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.mv-side-btn:hover:not(:disabled) { color: #fff; background: rgba(255,255,255,.08); }
+.mv-side-btn:disabled { opacity: .15; cursor: default; }
+/* Metadata chips */
+.mv-meta-bar {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 7px 12px;
+  background: var(--bg-sidebar, #12122a);
+  border-top: 1px solid var(--border, #2d2d3f);
+  flex-shrink: 0;
+}
+.mv-meta-chip {
+  font-size: 10px; padding: 2px 7px; border-radius: 10px;
+  background: rgba(255,255,255,.07); color: var(--fg-muted, #8892a4);
+}
+
+/* View button inside MediaRow header */
+.mm-view-btn {
+  display: flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 4px;
+  background: transparent; border: 1px solid var(--accent, #60a5fa);
+  color: var(--accent, #60a5fa); font-size: 10px; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.mm-view-btn:hover { background: var(--accent, #60a5fa); color: #fff; }

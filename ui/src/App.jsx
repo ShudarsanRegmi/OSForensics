@@ -7,7 +7,7 @@ import {
   Wifi, Package, List, Database, Cpu, Box, Globe, Users, ChevronUp,
   File, Code, RefreshCw, Info, LayoutPanelLeft, BarChart2, Home,
   BookOpen, Plus, Filter,
-  Image, Film, Music, MapPin, Camera, Layers,
+  Image, Film, Music, MapPin, Camera, Layers, Download, Play,
 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -49,6 +49,8 @@ const apiRecover     = (img, recoveryId) => post("/deleted/recover", { image_pat
 const apiCarveGroups = ()                => get("/deleted/carve/groups");
 const apiCarve       = (img, opts)       => post("/deleted/carve", { image_path: img, ...opts });
 const apiMultimedia  = (path)            => post("/multimedia", { image_path: path });
+const apiMediaUrl    = (imgPath, filePath) =>
+  `${API}/multimedia/view?image_path=${encodeURIComponent(imgPath)}&file_path=${encodeURIComponent(filePath)}`;
 
 // ─── Severity / icon helpers ──────────────────────────────────────────────────
 const SEV_COLOR = { critical: "#7f1d1d", high: "#dc2626", medium: "#d97706", low: "#16a34a", info: "#2563eb" };
@@ -3149,7 +3151,91 @@ function EmbeddedThumbnail({ thumbnail }) {
   );
 }
 
-function MediaRow({ item }) {
+// ─── Media viewer modal ───────────────────────────────────────────────────────
+function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, hasNext }) {
+  const viewUrl = apiMediaUrl(imgPath, item.path);
+  const isImage = item.media_type === "image";
+  const isVideo = item.media_type === "video";
+  const fname   = item.path.split("/").pop();
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "Escape")     onClose();
+      if (e.key === "ArrowLeft"  && hasPrev) onPrev();
+      if (e.key === "ArrowRight" && hasNext) onNext();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [hasPrev, hasNext, onClose, onPrev, onNext]);
+
+  const meta = item.metadata || {};
+  const metaChips = [
+    meta.make && `${meta.make}${meta.model ? " " + meta.model : ""}`,
+    meta.datetime_original,
+    meta.width_px && `${meta.width_px}×${meta.height_px}`,
+    meta.duration_s && `${meta.duration_s}s`,
+    meta.software && `Software: ${meta.software}`,
+    item.gps?.lat && `GPS: ${item.gps.lat.toFixed(4)}, ${item.gps.lon.toFixed(4)}`,
+  ].filter(Boolean);
+
+  return (
+    <div className="mv-overlay" onClick={onClose}>
+      <div className="mv-modal" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="mv-header">
+          <span className="mv-fname">{fname}</span>
+          <span className="mv-path" title={item.path}>{item.path}</span>
+          <div className="mv-header-actions">
+            <a className="mv-download-btn" href={viewUrl} download={fname}>
+              <Download size={13} /> Download
+            </a>
+            <button className="mv-close" onClick={onClose} title="Close (Esc)">
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Content area with side-nav arrows */}
+        <div className="mv-content-wrap">
+          <button className="mv-side-btn mv-side-prev" onClick={onPrev} disabled={!hasPrev} title="Previous (←)">
+            ‹
+          </button>
+
+          <div className="mv-content">
+            {isImage && <img src={viewUrl} alt={fname} className="mv-img" />}
+            {isVideo && (
+              <video controls autoPlay className="mv-video">
+                <source src={viewUrl} />
+              </video>
+            )}
+            {!isImage && !isVideo && (
+              <div className="mv-audio-wrap">
+                <Music size={64} className="mv-audio-icon" />
+                <div className="mv-audio-fname">{fname}</div>
+                <audio controls autoPlay className="mv-audio">
+                  <source src={viewUrl} />
+                </audio>
+              </div>
+            )}
+          </div>
+
+          <button className="mv-side-btn mv-side-next" onClick={onNext} disabled={!hasNext} title="Next (→)">
+            ›
+          </button>
+        </div>
+
+        {/* Metadata chips */}
+        {metaChips.length > 0 && (
+          <div className="mv-meta-bar">
+            {metaChips.map((c, i) => <span key={i} className="mv-meta-chip">{c}</span>)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MediaRow({ item, imgPath, onView }) {
   const [open, setOpen] = useState(false);
   const mt = MM_TYPE_META[item.media_type] || MM_TYPE_META.media;
   const Icon = mt.Icon;
@@ -3183,6 +3269,15 @@ function MediaRow({ item }) {
         {item.flags?.map(f => (
           <span key={f} className="mm-flag-tag">{f}</span>
         ))}
+        {imgPath && (
+          <button
+            className="mm-view-btn"
+            title="View file"
+            onClick={e => { e.stopPropagation(); onView(item); }}
+          >
+            <Play size={11} /> View
+          </button>
+        )}
         <SevBadge sev={item.severity} />
       </div>
       {open && (
@@ -3211,6 +3306,7 @@ function MultimediaTab({ findings = [], imgPath }) {
   const [running,    setRunning]    = useState(false);
   const [err,        setErr]        = useState(null);
   const [localFindings, setLocalFindings] = useState(findings);
+  const [viewItem,   setViewItem]   = useState(null);
 
   // Sync when parent report findings change
   useEffect(() => { setLocalFindings(findings); }, [findings]);
@@ -3316,9 +3412,28 @@ function MultimediaTab({ findings = [], imgPath }) {
         {items.length === 0 ? (
           <div className="mm-empty">No items match current filters.</div>
         ) : (
-          items.map((item, i) => <MediaRow key={i} item={item} />)
+          items.map((item, i) => (
+            <MediaRow key={i} item={item} imgPath={imgPath} onView={setViewItem} />
+          ))
         )}
       </div>
+
+      {/* Viewer modal */}
+      {viewItem && imgPath && (() => {
+        const idx    = items.findIndex(i => i.path === viewItem.path);
+        const safeIdx = idx === -1 ? 0 : idx;
+        return (
+          <MediaViewerModal
+            item={viewItem}
+            imgPath={imgPath}
+            onClose={() => setViewItem(null)}
+            onPrev={() => setViewItem(items[safeIdx - 1])}
+            onNext={() => setViewItem(items[safeIdx + 1])}
+            hasPrev={safeIdx > 0}
+            hasNext={safeIdx < items.length - 1}
+          />
+        );
+      })()}
     </div>
   );
 }
