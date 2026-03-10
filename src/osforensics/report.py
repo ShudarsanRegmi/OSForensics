@@ -98,6 +98,67 @@ class ServiceFinding(BaseModel):
     unit_path: str = ""
 
 
+# ── Memory forensics models ───────────────────────────────────────────────────
+
+class MemoryProcess(BaseModel):
+    pid: int = 0
+    ppid: int = 0
+    name: str = ""
+    offset: str = ""
+    threads: int = 0
+    create_time: Optional[str] = None
+    cmdline: Optional[str] = None
+    hidden: bool = False
+
+
+class MemoryConnection(BaseModel):
+    pid: int = 0
+    process: str = ""
+    proto: str = ""
+    laddr: str = ""
+    lport: int = 0
+    raddr: str = ""
+    rport: int = 0
+    state: str = ""
+
+
+class MemoryBashEntry(BaseModel):
+    pid: int = 0
+    process: str = ""
+    command: str = ""
+
+
+class MemoryMalfind(BaseModel):
+    pid: int = 0
+    process: str = ""
+    address: str = ""
+    protection: str = ""
+    hex_dump: str = ""
+    disassembly: str = ""
+
+
+class MemoryModule(BaseModel):
+    name: str = ""
+    size: int = 0
+    offset: str = ""
+
+
+class MemoryReport(BaseModel):
+    dump_path: str = ""
+    volatility_available: bool = False
+    volatility_error: Optional[str] = None
+    needs_symbols: bool = False
+    kernel_version: Optional[str] = None
+    symbol_errors: List[str] = []
+    processes: List[MemoryProcess] = []
+    hidden_processes: List[MemoryProcess] = []
+    connections: List[MemoryConnection] = []
+    bash_history: List[MemoryBashEntry] = []
+    malfind: List[MemoryMalfind] = []
+    modules: List[MemoryModule] = []
+    summary: Dict[str, Any] = {}
+
+
 # ── Top-level report ──────────────────────────────────────────────────────────
 
 class ForensicReport(BaseModel):

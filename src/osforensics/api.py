@@ -21,6 +21,7 @@ Explorer endpoints (Autopsy-style navigation):
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
@@ -29,7 +30,11 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from . import agent_memory
+from .agent_core import get_agent
 
 from .browser import detect_browsers
 from .cases import (
@@ -511,4 +516,111 @@ def cases_remove_source(case_id: str, source_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Agent endpoints ───────────────────────────────────────────────────────────
+
+class AgentChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    model: Optional[str] = None
+
+
+@app.get("/agent/status")
+def agent_status():
+    """Check whether Ollama is reachable and return available model info."""
+    ag = get_agent()
+    available, msg = ag.check_ollama()
+    return {
+        "available": available,
+        "message":   msg,
+        "model":     ag.model if available else None,
+        "models":    ag.list_models(),
+    }
+
+
+@app.post("/agent/chat/stream")
+def agent_chat_stream(req: AgentChatRequest):
+    """Stream investigation steps as SSE (text/event-stream).
+
+    Each SSE line is: `data: <json>\\n\\n`
+    The stream ends with `data: [DONE]\\n\\n`.
+    """
+    ag = get_agent()
+    if req.model:
+        ag.model = req.model
+
+    def generate():
+        try:
+            for event in ag.run(req.message, req.session_id):
+                yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":    "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/agent/chat")
+def agent_chat(req: AgentChatRequest):
+    """Non-streaming version: collect all steps, return when investigation completes."""
+    ag = get_agent()
+    if req.model:
+        ag.model = req.model
+
+    steps: list = []
+    final_answer = None
+    session_id: Optional[str] = req.session_id
+    error: Optional[str] = None
+
+    for event in ag.run(req.message, req.session_id):
+        t = event["type"]
+        if t == "session":
+            session_id = event["session_id"]
+        elif t == "step":
+            steps.append(event)
+        elif t == "answer":
+            final_answer = event
+            session_id   = event.get("session_id", session_id)
+        elif t == "error":
+            error = event["message"]
+            break
+
+    return {
+        "session_id":  session_id,
+        "steps":       steps,
+        "answer":      final_answer["text"] if final_answer else None,
+        "total_steps": final_answer.get("steps", len(steps)) if final_answer else len(steps),
+        "error":       error,
+    }
+
+
+@app.get("/agent/history/{session_id}")
+def agent_history(session_id: str):
+    """Return all episodes and evidence for a past investigation session."""
+    return {
+        "episodes": agent_memory.get_episodes(session_id),
+        "evidence": agent_memory.get_evidence(session_id),
+    }
+
+
+@app.get("/agent/sessions")
+def agent_sessions():
+    """List recent investigation sessions."""
+    return {"sessions": agent_memory.get_sessions()}
+
+
+@app.post("/agent/reset/{session_id}")
+def agent_reset(session_id: str):
+    """Clear episodes and evidence for a session (soft delete)."""
+    agent_memory.clear_session(session_id)
+    return {"ok": True}
 

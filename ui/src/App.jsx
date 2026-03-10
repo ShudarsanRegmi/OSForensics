@@ -6,7 +6,7 @@ import {
   Lock, Server, Key, Folder, FolderOpen as FolderOpenIcon, FileText,
   Wifi, Package, List, Database, Cpu, Box, Globe, Users, ChevronUp,
   File, Code, RefreshCw, Info, LayoutPanelLeft, BarChart2, Home,
-  BookOpen, Plus, Filter,
+  BookOpen, Plus, Filter, Bot, Send, Loader2, Zap,
 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -44,6 +44,10 @@ const apiCaseGet     = (id)              => get(`/cases/${id}`);
 const apiCaseDelete  = (id)              => fetch(`${API}/cases/${id}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
 const apiCaseAnalyze = (caseId, imgPath) => post(`/cases/${caseId}/analyze`, { image_path: imgPath });
 const apiCaseDelSrc  = (caseId, srcId)   => fetch(`${API}/cases/${caseId}/sources/${srcId}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+
+// ── Agent API ─────────────────────────────────────────────────────────────────
+const apiAgentStatus  = ()    => get("/agent/status");
+const apiAgentReset   = (sid) => fetch(`${API}/agent/reset/${sid}`, { method: "POST" }).then(r => r.json());
 
 // ─── Severity / icon helpers ──────────────────────────────────────────────────
 const SEV_COLOR = { critical: "#7f1d1d", high: "#dc2626", medium: "#d97706", low: "#16a34a", info: "#2563eb" };
@@ -3150,12 +3154,307 @@ function WorkspaceHome({ onAction }) {
 // ROOT APP
 // ═══════════════════════════════════════════════════════════════════════════════
 // ─── ACTIVITY BAR ─────────────────────────────────────────────────────────────
+// ─── AGENT PANEL ─────────────────────────────────────────────────────────────
+
+function AgentMessage({ msg }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (msg.role === "user") {
+    return (
+      <div className="ag-msg user">
+        <div className="ag-msg-bubble">{msg.text}</div>
+      </div>
+    );
+  }
+
+  const steps = msg.steps || [];
+  return (
+    <div className={`ag-msg agent${msg.error ? " err" : ""}${msg.inProgress ? " pending" : ""}`}>
+      {steps.length > 0 && (
+        <div className="ag-reasoning">
+          <button className="ag-reasoning-toggle" onClick={() => setExpanded(e => !e)}>
+            <Zap size={11} />
+            {steps.length} investigation step{steps.length !== 1 ? "s" : ""}
+            {msg.inProgress
+              ? <Loader2 size={10} className="spin ag-spin-inline" />
+              : <span>{expanded ? " ▲" : " ▼"}</span>}
+          </button>
+          {expanded && (
+            <div className="ag-steps">
+              {steps.map((s, i) => (
+                <div key={i} className="ag-step">
+                  <div className="ag-step-head">
+                    <span className="ag-step-num">{s.step}</span>
+                    <code className="ag-step-tool">{s.action}</code>
+                    {s.args && Object.keys(s.args).length > 0 && (
+                      <code className="ag-step-args">
+                        {Object.entries(s.args).map(([k, v]) => `${k}="${v}"`).join(", ")}
+                      </code>
+                    )}
+                  </div>
+                  <div className="ag-step-thought">{s.thought}</div>
+                  {s.observation && (
+                    <div className={`ag-step-obs${s.observation.error ? " err" : ""}`}>
+                      {s.observation.error
+                        ? s.observation.error
+                        : (() => {
+                            const txt = JSON.stringify(s.observation);
+                            return txt.length > 400 ? txt.slice(0, 400) + "…" : txt;
+                          })()}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {msg.inProgress && (
+                <div className="ag-step thinking-step">
+                  <Loader2 size={11} className="spin" /> Investigating…
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="ag-msg-bubble">
+        {msg.inProgress && !msg.text ? (
+          <span className="ag-thinking-text">
+            <Loader2 size={12} className="spin" /> Analysing evidence…
+          </span>
+        ) : (
+          <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const AGENT_EXAMPLES = [
+  "Analyse /mnt/evidence and identify all suspicious activity",
+  "What persistence mechanisms are present on this system?",
+  "Investigate browser history — look for malicious or unusual domains",
+  "Check for deleted files and command history that indicate data exfiltration",
+];
+
+function AgentPanel() {
+  const [messages,     setMessages]     = useState([]);
+  const [input,        setInput]        = useState("");
+  const [loading,      setLoading]      = useState(false);
+  const [sessionId,    setSessionId]    = useState(null);
+  const [ollamaStatus, setOllamaStatus] = useState(null);
+  const [model,        setModel]        = useState("qwen2.5:7b");
+  const bottomRef = useRef(null);
+  const abortRef  = useRef(null);
+
+  useEffect(() => {
+    apiAgentStatus()
+      .then(s => { setOllamaStatus(s); if (s.model) setModel(s.model); })
+      .catch(() => setOllamaStatus({ available: false, message: "API server not running" }));
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function send() {
+    const userMsg = input.trim();
+    if (!userMsg || loading) return;
+    setInput("");
+
+    setMessages(m => [...m,
+      { role: "user",  text: userMsg },
+      { role: "agent", text: "", steps: [], inProgress: true },
+    ]);
+    setLoading(true);
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    let curSession = sessionId;
+    let accSteps   = [];
+    let accText    = "";
+
+    try {
+      const resp = await fetch(`${API}/agent/chat/stream`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ message: userMsg, session_id: curSession, model }),
+        signal:  ctrl.signal,
+      });
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+
+      const reader  = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") break;
+          let ev;
+          try { ev = JSON.parse(payload); } catch { continue; }
+
+          if (ev.type === "session") {
+            curSession = ev.session_id;
+            setSessionId(ev.session_id);
+          } else if (ev.type === "step") {
+            accSteps = [...accSteps, ev];
+            setMessages(m => {
+              const c = [...m];
+              c[c.length - 1] = { ...c[c.length - 1], steps: accSteps };
+              return c;
+            });
+          } else if (ev.type === "answer") {
+            accText = ev.text;
+            setMessages(m => {
+              const c = [...m];
+              c[c.length - 1] = { role: "agent", text: ev.text, steps: accSteps, inProgress: false };
+              return c;
+            });
+          } else if (ev.type === "error") {
+            accText = ev.message;
+            setMessages(m => {
+              const c = [...m];
+              c[c.length - 1] = { role: "agent", text: ev.message, steps: accSteps, inProgress: false, error: true };
+              return c;
+            });
+          }
+        }
+      }
+
+      // In case stream ended without an explicit answer/error event
+      setMessages(m => {
+        const last = m[m.length - 1];
+        if (last?.role === "agent" && last?.inProgress) {
+          const c = [...m];
+          c[c.length - 1] = { ...last, inProgress: false, text: accText || "Investigation complete." };
+          return c;
+        }
+        return m;
+      });
+    } catch (e) {
+      if (e.name === "AbortError") {
+        setMessages(m => {
+          const c = [...m];
+          if (c[c.length - 1]?.role === "agent")
+            c[c.length - 1] = { ...c[c.length - 1], inProgress: false, text: "Investigation stopped by user." };
+          return c;
+        });
+      } else {
+        setMessages(m => {
+          const c = [...m];
+          if (c[c.length - 1]?.role === "agent")
+            c[c.length - 1] = { role: "agent", text: String(e), steps: accSteps, inProgress: false, error: true };
+          return c;
+        });
+      }
+    } finally {
+      setLoading(false);
+      abortRef.current = null;
+    }
+  }
+
+  function stopInvestigation() { abortRef.current?.abort(); }
+
+  function clearSession() {
+    if (sessionId) apiAgentReset(sessionId).catch(() => {});
+    setMessages([]);
+    setSessionId(null);
+  }
+
+  return (
+    <div className="ag-panel">
+      {/* header */}
+      <div className="ag-header">
+        <Bot size={15} strokeWidth={1.8} />
+        <span className="ag-header-title">Investigation Agent</span>
+        {ollamaStatus && (
+          <span
+            className={`ag-status-badge${ollamaStatus.available ? " ok" : " err"}`}
+            title={ollamaStatus.message}
+          >
+            {ollamaStatus.available ? ollamaStatus.model : "Ollama offline"}
+          </span>
+        )}
+        <div className="ag-header-right">
+          {sessionId && <span className="ag-session-id">#{sessionId}</span>}
+          {messages.length > 0 && (
+            <button className="ag-btn-icon" onClick={clearSession} disabled={loading} title="Clear session">
+              <RefreshCw size={12} /> Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Ollama setup notice */}
+      {ollamaStatus && !ollamaStatus.available && (
+        <div className="ag-notice">
+          <div className="ag-notice-title">
+            <AlertTriangle size={13} /> {ollamaStatus.message}
+          </div>
+          <div className="ag-notice-steps">
+            <code>curl -fsSL https://ollama.ai/install.sh | sh</code>
+            <code>ollama serve</code>
+            <code>ollama pull qwen2.5:7b</code>
+          </div>
+        </div>
+      )}
+
+      {/* message thread */}
+      <div className="ag-messages">
+        {messages.length === 0 && (
+          <div className="ag-empty">
+            <Bot size={38} strokeWidth={1.1} className="ag-empty-icon" />
+            <p>State your investigation goal.<br />The agent gathers evidence using forensic tools, then reasons about it.</p>
+            <div className="ag-examples">
+              {AGENT_EXAMPLES.map((ex, i) => (
+                <button key={i} className="ag-example" onClick={() => setInput(ex)}>{ex}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        {messages.map((msg, i) => <AgentMessage key={i} msg={msg} />)}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* input */}
+      <div className="ag-input-area">
+        <textarea
+          className="ag-textarea"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder="Describe the investigation goal… (Enter to send, Shift+Enter for newline)"
+          rows={2}
+          disabled={loading}
+        />
+        <div className="ag-input-btns">
+          {loading ? (
+            <button className="ag-btn-stop" onClick={stopInvestigation}>
+              <X size={14} /> Stop
+            </button>
+          ) : (
+            <button className="ag-btn-send" onClick={send} disabled={!input.trim()}>
+              <Send size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActivityBar({ view, onView, hasExplorer, hasReport }) {
   const items = [
-    { id: "home",     Icon: Home,            label: "Home",    always: true },
-    { id: "cases",    Icon: BookOpen,         label: "Cases",   always: true },
-    { id: "explorer", Icon: LayoutPanelLeft,  label: "Explorer",disabled: !hasExplorer },
-    { id: "report",   Icon: BarChart2,        label: "Report",  disabled: !hasReport },
+    { id: "home",     Icon: Home,           label: "Home",     always: true },
+    { id: "cases",    Icon: BookOpen,        label: "Cases",    always: true },
+    { id: "agent",    Icon: Bot,             label: "Agent",    always: true },
+    { id: "explorer", Icon: LayoutPanelLeft, label: "Explorer", disabled: !hasExplorer },
+    { id: "report",   Icon: BarChart2,       label: "Report",   disabled: !hasReport },
   ];
   const caseActive = view === "cases" || view === "case";
   return (
@@ -3326,6 +3625,8 @@ export default function App() {
 
         <div className="main-content">
           {view === "home" && <WorkspaceHome onAction={handleAction} />}
+
+          {view === "agent" && <AgentPanel />}
 
           {view === "cases" && (
             <CasesView
