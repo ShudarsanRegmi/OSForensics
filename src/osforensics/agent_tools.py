@@ -12,13 +12,16 @@ from typing import Any, Dict
 
 from .browser import detect_browsers
 from .classifier import classify_findings
-from .deleted import detect_deleted
+from .config import analyze_configs
+from .deleted import detect_deleted, carve_files
 from .detector import detect_os, detect_tools
 from .extractor import FilesystemAccessor
 from .memory import analyze_memory
+from .multimedia import analyze_multimedia
 from .persistence import detect_persistence
 from .report import build_report
 from .services import detect_services
+from .tails import analyze_tails
 from .timeline import build_timeline
 
 # ── Tool registry ──────────────────────────────────────────────────────────────
@@ -286,6 +289,112 @@ def search_file_content(path: str, pattern: str) -> dict:
         }
     except subprocess.TimeoutExpired:
         return {"error": "Search timed out — directory may be too large"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_tool(
+    "analyze_multimedia",
+    (
+        "Discover and analyze multimedia files (images, video, audio) for metadata, "
+        "GPS locations, and steganography indicators (hidden data)."
+    ),
+    {"path": "str: absolute path to a mounted filesystem directory"},
+)
+def analyze_multimedia_tool(path: str) -> dict:
+    try:
+        fs = FilesystemAccessor(path)
+        findings = analyze_multimedia(fs)
+        # Summarize for the agent
+        critical = [f for f in findings if f.get("severity") == "critical"]
+        high     = [f for f in findings if f.get("severity") == "high"]
+        gps_files = [f for f in findings if f.get("gps")]
+        return {
+            "total_media_found": len(findings),
+            "critical_issues":   len(critical),
+            "high_issues":       len(high),
+            "files_with_gps":    len(gps_files),
+            "samples":           findings[:15],
+            "critical":          critical[:10],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_tool(
+    "analyze_tails_os",
+    (
+        "Run specialized forensic checks for Tails OS indicators, persistence "
+        "usage, Tor activity, and amnesic runtime traces."
+    ),
+    {"path": "str: absolute path to a mounted filesystem directory"},
+)
+def analyze_tails_tool(path: str) -> dict:
+    try:
+        fs = FilesystemAccessor(path)
+        # We can pass existing findings if we had them, but for a standalone call, None is fine
+        tails_findings = analyze_tails(fs)
+        return {
+            "tails_detected": any(f["category"] == "environment" and f["severity"] == "high" for f in tails_findings),
+            "findings": tails_findings,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_tool(
+    "audit_security_configs",
+    (
+        "Audit critical system configurations (SSH, sudo, firewall, PAM, sysctl) "
+        "for security weaknesses, misconfigurations, and rogue entries."
+    ),
+    {"path": "str: absolute path to a mounted filesystem directory"},
+)
+def audit_security_configs_tool(path: str) -> dict:
+    try:
+        fs = FilesystemAccessor(path)
+        findings = analyze_configs(fs)
+        critical = [f for f in findings if f.get("severity") == "critical"]
+        high     = [f for f in findings if f.get("severity") == "high"]
+        # Group by category
+        by_cat = {}
+        for f in findings:
+            cat = f.get("category", "general")
+            by_cat[cat] = by_cat.get(cat, 0) + 1
+
+        return {
+            "total_findings": len(findings),
+            "critical": len(critical),
+            "high": len(high),
+            "by_category": by_cat,
+            "top_findings": findings[:20],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_tool(
+    "carve_deleted_files",
+    (
+        "Attempt to carve deleted files from a raw disk image using file signatures. "
+        "This is a slow, deep-scan operation that works even if the filesystem is damaged."
+    ),
+    {
+        "image_path": "str: absolute path to the raw disk image file",
+        "groups": "list: optional list of file groups to carve (image, document, executable, database, archive, video, audio, text)",
+    },
+)
+def carve_deleted_files_tool(image_path: str, groups: list = None) -> dict:
+    try:
+        fs = FilesystemAccessor(image_path)
+        # Use a standardized recovery directory
+        out_dir = "/tmp/osforensics_carved"
+        findings = carve_files(fs, out_dir, sig_groups=groups, max_files=50)
+        return {
+            "total_carved": len([f for f in findings if f.get("type") == "carved"]),
+            "output_directory": out_dir,
+            "findings": findings,
+        }
     except Exception as e:
         return {"error": str(e)}
 

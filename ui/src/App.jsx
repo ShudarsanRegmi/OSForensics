@@ -2717,22 +2717,50 @@ function PersistenceTab({ findings = [] }) {
 }
 
 const RISK_COLOR = { high: "#dc2626", medium: "#d97706", low: "#16a34a", "privacy-infrastructure": "#7c3aed", "dual-use": "#2563eb", infrastructure: "#0891b2" };
-function ToolsTab({ findings = [] }) {
-  if (findings.length === 0) return <EmptyState icon={Search} message="No notable tools detected." />;
+function EvidenceLocker({ report }) {
+  const findings = [
+    ...(report.persistence || []).map(f => ({ ...f, type: "Persistence", Icon: Shield })),
+    ...(report.config || []).filter(f => f.severity !== "info").map(f => ({ ...f, type: "Config Audit", Icon: Settings })),
+    ...(report.tails || []).map(f => ({ ...f, type: "TailsOS", Icon: Sailboat })),
+    ...(report.findings || []).map(f => ({ ...f, type: "Notable Tool", Icon: Search, detail: f.tool })),
+  ].sort((a, b) => (SEV_ORDER[a.severity] ?? 4) - (SEV_ORDER[b.severity] ?? 4));
+
+  if (findings.length === 0) return <EmptyState icon={Package} message="No high-priority evidence collected yet." />;
+
   return (
     <div className="tab-content">
-      <table className="rp-table findings">
-        <thead><tr><th>Tool</th><th>Risk</th><th>Evidence</th></tr></thead>
-        <tbody>
-          {findings.map((f, i) => (
-            <tr key={i}>
-              <td><strong>{f.tool}</strong></td>
-              <td><span className="sev-badge" style={{ background: RISK_COLOR[f.risk] || "#6b7280" }}>{f.risk}</span></td>
-              <td><ul className="evidence-list">{f.evidence?.map((ev, j) => <li key={j}><code>{ev}</code></li>)}</ul></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="lsd-intro" style={{marginBottom: 20}}>
+        <div className="tails-head-title" style={{fontSize: 18, fontWeight: 700, color: "var(--fg)"}}><Package size={18} /> Central Evidence Repository</div>
+      </div>
+      <div className="sa-audit-card" style={{padding: 0}}>
+        <div className="sc-table-wrap">
+          <table className="sc-table">
+            <thead>
+              <tr>
+                <th style={{width: 120}}>Category</th>
+                <th style={{width: 80}}>Risk</th>
+                <th>Preserved Finding / Artifact</th>
+              </tr>
+            </thead>
+            <tbody>
+              {findings.map((f, i) => (
+                <tr key={i}>
+                  <td style={{verticalAlign: "middle"}}>
+                    <div style={{display: "flex", alignItems: "center", gap: 6, fontWeight: 600}}>
+                      <f.Icon size={12} style={{color: "var(--accent-purp)"}} /> {f.type}
+                    </div>
+                  </td>
+                  <td style={{verticalAlign: "middle"}}><SevBadge sev={f.severity} /></td>
+                  <td>
+                    <div style={{fontWeight: 700, marginBottom: 2}}>{f.detail || f.tool}</div>
+                    <code className="del-path" style={{fontSize: 10, opacity: 0.8}}>{f.source || f.config || f.path || "System Level"}</code>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2815,9 +2843,57 @@ function ConfigGroup({ configKey, findings }) {
   );
 }
 
+function SecurityAuditDashboard({ findings }) {
+  const total = findings.length;
+  const critical = findings.filter(f => f.severity === "critical").length;
+  const high = findings.filter(f => f.severity === "high").length;
+  const score = Math.max(0, 100 - (critical * 20) - (high * 10));
+  const statusLabel = score > 80 ? "Secure" : score > 50 ? "Risk" : "Critical";
+  const scoreColor = score > 80 ? "var(--success)" : score > 50 ? "var(--warn)" : "var(--danger)";
+
+  return (
+    <div className="sa-dashboard">
+      <div className="sa-risk-dial-wrap">
+        <div className="sa-score-value" style={{ color: scoreColor }}>{score}</div>
+        <div className="sa-score-label" style={{ color: scoreColor }}>{statusLabel} Safety Score</div>
+        <div className="ws-sub" style={{ margin: 0, fontSize: 13 }}>System hardening analysis completed. {total} total findings.</div>
+      </div>
+      
+      <div className="sa-audit-grid">
+        <div className="sa-audit-card">
+          <div className="sa-audit-header">
+            <Lock size={16} style={{ color: "var(--accent-blu)" }} />
+            <div className="sa-audit-title">Access Controls</div>
+          </div>
+          {findings.filter(f => f.category?.includes("Auth") || f.category?.includes("User") || f.category?.includes("sudo")).slice(0, 3).map((f, i) => (
+            <div key={i} className="sa-finding-row">
+              <div className="sa-finding-status"><SevBadge sev={f.severity} /></div>
+              <div className="sa-finding-text">{f.detail}</div>
+            </div>
+          ))}
+        </div>
+        
+        <div className="sa-audit-card">
+          <div className="sa-audit-header">
+            <Shield size={16} style={{ color: "var(--accent)" }} />
+            <div className="sa-audit-title">Security Services</div>
+          </div>
+          {findings.filter(f => f.category?.includes("Firewall") || f.category?.includes("Kernel") || f.category?.includes("Network")).slice(0, 3).map((f, j) => (
+            <div key={j} className="sa-finding-row">
+              <div className="sa-finding-status"><SevBadge sev={f.severity} /></div>
+              <div className="sa-finding-text">{f.detail}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfigTab({ findings = [] }) {
   const [severityFilter, setSeverityFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState("dashboard"); // "dashboard" | "list"
 
   if (findings.length === 0)
     return <EmptyState icon={Settings} message="No configuration findings available." />;
@@ -2827,16 +2903,14 @@ function ConfigTab({ findings = [] }) {
     if (search) {
       const q = search.toLowerCase();
       return f.detail.toLowerCase().includes(q)
-          || f.config.toLowerCase().includes(q)
-          || f.category.toLowerCase().includes(q)
-          || (f.recommendation || "").toLowerCase().includes(q);
+          || (f.config || "").toLowerCase().includes(q)
+          || (f.category || "").toLowerCase().includes(q);
     }
     return true;
   });
 
-  // Group by config file, sorted so highest-severity groups come first
   const grouped = filtered.reduce((acc, f) => {
-    const key = f.config;
+    const key = f.config || "system";
     if (!acc[key]) acc[key] = [];
     acc[key].push(f);
     return acc;
@@ -2848,10 +2922,6 @@ function ConfigTab({ findings = [] }) {
     return sevA - sevB;
   });
 
-  const critCount = findings.filter(f => f.severity === "critical").length;
-  const highCount = findings.filter(f => f.severity === "high").length;
-  const medCount  = findings.filter(f => f.severity === "medium").length;
-
   const SEV_FILTERS = [
     { id: "all",      label: "All" },
     { id: "critical", label: "Critical", color: SEV_COLOR.critical },
@@ -2862,46 +2932,50 @@ function ConfigTab({ findings = [] }) {
   ];
 
   return (
-    <div className="tab-content cfg-tab">
-      {/* Summary bar */}
-      <div className="cfg-summary-bar">
-        {critCount > 0 && (
-          <span className="cfg-sev-pill" style={{ background: "#fef2f2", color: SEV_COLOR.critical, border: "1px solid #fecaca" }}>
-            <AlertTriangle size={11} /> {critCount} Critical
-          </span>
-        )}
-        {highCount > 0 && (
-          <span className="cfg-sev-pill" style={{ background: "#fff7ed", color: SEV_COLOR.high, border: "1px solid #fed7aa" }}>
-            <AlertTriangle size={11} /> {highCount} High
-          </span>
-        )}
-        {medCount > 0 && (
-          <span className="cfg-sev-pill" style={{ background: "#fffbeb", color: SEV_COLOR.medium, border: "1px solid #fde68a" }}>
-            <AlertTriangle size={11} /> {medCount} Medium
-          </span>
-        )}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <div className="cfg-sev-filters">
-            {SEV_FILTERS.map(({ id, label, color }) => (
-              <button key={id}
-                className={`cfg-sev-filter ${severityFilter === id ? "active" : ""}`}
-                style={severityFilter === id && color ? { background: color, color: "#fff", borderColor: color } : {}}
-                onClick={() => setSeverityFilter(id)}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <input className="tl-search" placeholder="Search…" value={search}
-            onChange={e => setSearch(e.target.value)} style={{ maxWidth: 200 }} />
+    <div className="tab-content">
+      <div className="lsd-intro" style={{marginBottom: 20, justifyContent: "space-between"}}>
+        <div style={{display: "flex", alignItems: "center", gap: 8}}>
+          <Settings size={18} />
+          <div className="tails-head-title" style={{fontSize: 18, fontWeight: 700, color: "var(--fg)"}}>Security Architecture Audit</div>
+        </div>
+        
+        <div className="explorer-mode-toggle">
+          <button className={`mode-toggle-btn ${viewMode === 'dashboard' ? 'active' : ''}`} onClick={() => setViewMode('dashboard')} title="Dashboard View"><LayoutPanelLeft size={11} /></button>
+          <button className={`mode-toggle-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')} title="Detailed List"><List size={11} /></button>
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={CheckCircle} message="No findings match the current filter." />
+      {viewMode === "dashboard" ? (
+        <SecurityAuditDashboard findings={findings} />
       ) : (
-        sortedKeys.map(key => (
-          <ConfigGroup key={key} configKey={key} findings={grouped[key]} />
-        ))
+        <>
+          <div className="cfg-summary-bar">
+            <div className="cfg-sev-filters">
+              {SEV_FILTERS.map(({ id, label, color }) => (
+                <button key={id}
+                  className={`cfg-sev-filter ${severityFilter === id ? "active" : ""}`}
+                  style={severityFilter === id && color ? { background: color, color: "#fff", borderColor: color } : {}}
+                  onClick={() => setSeverityFilter(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="del-search-wrap" style={{maxWidth: 300, marginLeft: "auto"}}>
+              <Search size={12} className="del-search-icon" />
+              <input className="del-search" placeholder="Search..." value={search}
+                onChange={e => setSearch(e.target.value)} />
+            </div>
+          </div>
+          <div className="cfg-list" style={{marginTop: 20}}>
+            {filtered.length === 0 ? (
+              <EmptyState icon={CheckCircle} message="No findings match the current filter." />
+            ) : (
+              sortedKeys.map(key => (
+                <ConfigGroup key={key} configKey={key} findings={grouped[key]} />
+              ))
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -3675,12 +3749,12 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
   );
 }
 
-function MediaRow({ item, imgPath, onView }) {
-  const [open, setOpen] = useState(false);
+function MediaCard({ item, imgPath, onView }) {
   const mt = MM_TYPE_META[item.media_type] || MM_TYPE_META.media;
   const Icon = mt.Icon;
-  const hasBadFlags = item.severity === "high" || item.severity === "critical";
-  const hasMedFlags = item.severity === "medium";
+  const isFlagged = item.severity === "high" || item.severity === "critical";
+  const fname = item.name || item.path.split("/").pop();
+  const viewUrl = imgPath ? apiMediaUrl(imgPath, item.path) : null;
 
   const fmtSize = (n) => {
     if (!n) return "";
@@ -3690,51 +3764,24 @@ function MediaRow({ item, imgPath, onView }) {
   };
 
   return (
-    <div className={`mm-row ${hasBadFlags ? "mm-row-high" : hasMedFlags ? "mm-row-med" : ""}`}>
-      <div className="mm-row-header" onClick={() => setOpen(o => !o)}>
-        <span className="mm-row-chevron">
-          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </span>
-        <Icon size={13} style={{ color: mt.color, flexShrink: 0 }} />
-        <span className="mm-row-path" title={item.path}>{item.name || item.path.split("/").pop()}</span>
-        {item.size > 0 && <span className="mm-row-size">{fmtSize(item.size)}</span>}
-        {item.metadata?.resolution && (
-          <span className="mm-row-dim">{item.metadata.resolution}</span>
+    <div className="mm-card" onClick={() => onView(item)}>
+      <div className="mm-card-preview">
+        {viewUrl && item.media_type === "image" ? (
+          <img src={viewUrl} alt={fname} className="mm-card-img" />
+        ) : (
+          <Icon size={48} className="mm-card-icon-overlay" />
         )}
-        {item.metadata?.width_px && (
-          <span className="mm-row-dim">{item.metadata.width_px}×{item.metadata.height_px}</span>
-        )}
-        <GpsLink gps={item.gps} />
-        <div style={{ flex: 1 }} />
-        {item.flags?.map(f => (
-          <span key={f} className="mm-flag-tag">{f}</span>
-        ))}
-        {imgPath && (
-          <button
-            className="mm-view-btn"
-            title="View file"
-            onClick={e => { e.stopPropagation(); onView(item); }}
-          >
-            <Play size={11} /> View
-          </button>
-        )}
-        <SevBadge sev={item.severity} />
+        <div className="mm-card-type-badge">{item.media_type}</div>
+        {isFlagged && <div className="mm-card-flag">FLAGGED</div>}
       </div>
-      {open && (
-        <div className="mm-row-body">
-          <div className="mm-row-path-full"><FileText size={10} /> {item.path}</div>
-          {item.findings?.length > 0 && (
-            <ul className="mm-findings-list">
-              {item.findings.map((f, i) => (
-                <li key={i} className="mm-finding-item"><AlertTriangle size={10} /> {f}</li>
-              ))}
-            </ul>
-          )}
-          <EmbeddedThumbnail thumbnail={item.thumbnail} />
-          <StreamsTable streams={item.streams} />
-          <MetaTable meta={item.metadata} />
+      <div className="mm-card-info">
+        <div className="mm-card-name" title={fname}>{fname}</div>
+        <div className="mm-card-path" title={item.path}>{item.path}</div>
+        <div className="mm-card-footer">
+          <span className="mm-card-size">{fmtSize(item.size)}</span>
+          <SevBadge sev={item.severity} />
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -3747,6 +3794,7 @@ function MultimediaTab({ findings = [], imgPath }) {
   const [err,        setErr]        = useState(null);
   const [localFindings, setLocalFindings] = useState(findings);
   const [viewItem,   setViewItem]   = useState(null);
+  const [viewMode,   setViewMode]   = useState("grid"); // "grid" | "list"
 
   // Sync when parent report findings change
   useEffect(() => { setLocalFindings(findings); }, [findings]);
@@ -3785,98 +3833,19 @@ function MultimediaTab({ findings = [], imgPath }) {
 
   if (!localFindings || localFindings.length === 0) {
     return (
-      <div className="mm-tab">
+      <div className="tab-content">
         <EmptyState icon={Image} message="No media files analysed." />
         {imgPath && (
           <div style={{ textAlign: "center", marginTop: 12 }}>
             <button className="btn-primary btn-sm" onClick={handleRescan} disabled={running}>
               {running ? "Scanning…" : "Scan for Media Files"}
             </button>
-            {err && <div className="mm-err">{err}</div>}
+            {err && <div className="dlg-error" style={{marginTop: 12}}>{err}</div>}
           </div>
         )}
       </div>
     );
   }
-
-  return (
-    <div className="mm-tab">
-      {/* Stats bar */}
-      <div className="mm-stats-bar">
-        <span className="mm-stat"><Image size={11} /><strong>{counts.image}</strong> image{counts.image !== 1 ? "s" : ""}</span>
-        <span className="mm-stat"><Film  size={11} /><strong>{counts.video}</strong> video{counts.video !== 1 ? "s" : ""}</span>
-        <span className="mm-stat"><Music size={11} /><strong>{counts.audio}</strong> audio</span>
-        {withGps > 0 && (
-          <span className="mm-stat mm-stat-warn"><MapPin size={11} /><strong>{withGps}</strong> with GPS</span>
-        )}
-        {flagged > 0 && (
-          <span className="mm-stat mm-stat-warn"><AlertTriangle size={11} /><strong>{flagged}</strong> flagged</span>
-        )}
-        <div style={{ flex: 1 }} />
-        {imgPath && (
-          <button className="btn-secondary btn-sm" onClick={handleRescan} disabled={running}>
-            <RefreshCw size={11} className={running ? "spin" : ""} />
-            {running ? "Scanning…" : "Re-scan"}
-          </button>
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="mm-filters">
-        <Filter size={11} />
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="mm-select">
-          <option value="all">All types</option>
-          <option value="image">Images</option>
-          <option value="video">Videos</option>
-          <option value="audio">Audio</option>
-        </select>
-        <select value={filterSev} onChange={e => setFilterSev(e.target.value)} className="mm-select">
-          <option value="all">All severity</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="info">Info</option>
-        </select>
-        <input
-          type="text"
-          placeholder="Search path or finding…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="mm-search"
-        />
-      </div>
-      {err && <div className="mm-err">{err}</div>}
-
-      {/* File list */}
-      <div className="mm-list">
-        {items.length === 0 ? (
-          <div className="mm-empty">No items match current filters.</div>
-        ) : (
-          items.map((item, i) => (
-            <MediaRow key={i} item={item} imgPath={imgPath} onView={setViewItem} />
-          ))
-        )}
-      </div>
-
-      {/* Viewer modal */}
-      {viewItem && imgPath && (() => {
-        const idx    = items.findIndex(i => i.path === viewItem.path);
-        const safeIdx = idx === -1 ? 0 : idx;
-        return (
-          <MediaViewerModal
-            item={viewItem}
-            imgPath={imgPath}
-            onClose={() => setViewItem(null)}
-            onPrev={() => setViewItem(items[safeIdx - 1])}
-            onNext={() => setViewItem(items[safeIdx + 1])}
-            hasPrev={safeIdx > 0}
-            hasNext={safeIdx < items.length - 1}
-          />
-        );
-      })()}
-    </div>
-  );
-}
 
 const REPORT_TABS = [
   { id: "summary",     label: "Summary",     Icon: HardDrive },
@@ -3890,6 +3859,7 @@ const REPORT_TABS = [
   { id: "multimedia",  label: "Multimedia",  Icon: Image     },
   { id: "tails",       label: "TailsOS",     Icon: Sailboat  },
   { id: "tools",       label: "Tools",       Icon: Search    },
+  { id: "evidence",    label: "Evidence",    Icon: Package   },
 ];
 
 function ReportPanel({ report, liveInfo, imgPath, onClear, onExport, onReanalyze, reanalyzing }) {
@@ -4045,6 +4015,7 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExport, onReanalyze
         {tab === "multimedia"  && <MultimediaTab  findings={filteredMultimedia} imgPath={imgPath} />}
         {tab === "tails"       && <TailsTab       findings={report.tails || []} summary={summary || {}} />}
         {tab === "tools"       && <ToolsTab       findings={report.findings} />}
+        {tab === "evidence"    && <EvidenceLocker report={report} />}
       </div>
     </div>
   );

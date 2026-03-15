@@ -2,25 +2,35 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --font: Inter, 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
-  --bg:         #eceef2;
-  --surface:    #f5f6f9;
-  --border:     #c8cdd8;
-  --border-lt:  #dde1ea;
-  --fg:         #1a1f2e;
-  --fg-muted:   #5a6278;
-  --accent:     #2563eb;
-  --accent-dk:  #1d4ed8;
-  --danger:     #dc2626;
-  --success:    #16a34a;
-  --warn:       #d97706;
-  --titlebar-h: 32px;
-  --menubar-h:  28px;
-  --toolbar-h:  44px;
-  --statusbar-h:24px;
-  --radius:     6px;
-  --shadow:     0 4px 18px rgba(10,20,60,.12);
-  --shadow-sm:  0 2px 8px  rgba(10,20,60,.08);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Cyber Defense Palette */
+  --bg:         #0b0e14;
+  --surface:    #161b22;
+  --surface-lt: #1c2128;
+  --border:     #30363d;
+  --border-lt:  #21262d;
+  
+  --fg:         #c9d1d9;
+  --fg-muted:   #8b949e;
+  
+  --accent:      #238636; /* Emerald Green for "Safe" */
+  --accent-blu:  #2f81f7; /* High-tech Blue */
+  --accent-purp: #a371f7; /* Advanced Analytics Purple */
+  
+  --danger:     #f85149;
+  --warn:       #d29922;
+  --success:    #3fb950;
+  --info:       #58a6ff;
+
+  --titlebar-h:  36px;
+  --menubar-h:   28px;
+  --toolbar-h:   48px;
+  --statusbar-h: 24px;
+  --radius:      8px;
+  
+  --shadow:     0 8px 32px rgba(0, 0, 0, 0.4);
+  --glass:      rgba(22, 27, 34, 0.8);
 }
 
 html, body, #root {
@@ -44,12 +54,13 @@ html, body, #root {
 /* ── Title bar ─────────────────────────────────────────────────────────────── */
 .titlebar {
   height: var(--titlebar-h);
-  background: linear-gradient(135deg, #111827 0%, #1e3a5f 100%);
+  background: linear-gradient(90deg, #0d1117 0%, #161b22 100%);
   display: flex;
   align-items: center;
-  padding: 0 14px;
-  gap: 8px;
+  padding: 0 16px;
+  gap: 12px;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
 }
 .title-icon { display:flex; align-items:center; color:#93c5fd; flex-shrink:0; }
 .title-name {
@@ -1102,15 +1113,7 @@ kbd {
   border: 1px solid #2a2a3e;
 }
 
-  padding: 10px 12px;
-  font-family: monospace;
-  font-size: 11px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  overflow-x: auto;
-  max-height: 160px;
-  border: 1px solid #2a2a3e;
-}
+/* ── Tools tab uses existing rp-table / evidence-list ─────────────────────── */
 
 /* ── Tools tab uses existing rp-table / evidence-list ─────────────────────── */
 
@@ -4679,3 +4682,213 @@ kbd {
   transition: border-color 0.1s, color 0.1s;
 }
 .lsd-sel-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Premium Multimedia Grid & Components ───────────────────────────────── */
+.mm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.mm-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+
+.mm-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent-blu);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+}
+
+.mm-card-preview {
+  height: 140px;
+  background: #0d1117;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.mm-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.mm-card:hover .mm-card-img { opacity: 1; }
+
+.mm-card-icon-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+
+.mm-card-type-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.mm-card-flag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--danger);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+.mm-card-info {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mm-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mm-card-path {
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mm-card-footer {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mm-card-size { font-size: 11px; color: var(--fg-muted); }
+
+/* ── Security Audit Dashboard Styles ────────────────────────────────────── */
+.sa-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sa-risk-dial-wrap {
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.sa-risk-dial-wrap::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(35, 134, 54, 0.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.sa-score-value {
+  font-size: 64px;
+  font-weight: 900;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.sa-score-label {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--fg-muted);
+}
+
+.sa-audit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.sa-audit-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: border-color 0.2s;
+}
+
+.sa-audit-card:hover { border-color: var(--accent-purp); }
+
+.sa-audit-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.sa-audit-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fg);
+  flex: 1;
+}
+
+.sa-finding-row {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-lt);
+}
+
+.sa-finding-row:last-child { border-bottom: none; }
+
+.sa-finding-status { margin-top: 2px; }
+
+.sa-finding-text {
+  font-size: 12px;
+  color: var(--fg);
+  line-height: 1.4;
+}
+
