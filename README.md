@@ -103,3 +103,22 @@ Example request body:
 
 Case workflow endpoint: `POST /cases/{case_id}/analyze/ssh`
 
+## Legal Awareness Features
+
+The backend now includes legal/procedural metadata to support forensic workflow quality:
+
+- Evidence integrity verification:
+	- For file-based evidence, SHA256 and SHA1 are computed and attached under `evidence_integrity`.
+	- Includes acquisition timestamp and evidence path.
+- Chain of custody tracking:
+	- Case records now maintain `chain_of_custody` entries for source ingestion/removal.
+	- Each source gets an evidence id (`EV-001`, `EV-002`, ...).
+- Evidence provenance:
+	- Case sources store a `provenance` object describing source and extraction method.
+	- Analysis responses include `evidence_provenance` in report output.
+- Audit logging:
+	- Case records include `audit_log` events for case/source and analysis actions.
+	- Analysis responses include per-run `audit_log` metadata.
+- Legal disclaimer block:
+	- Reports include `legal_disclaimer` with forensic-safe handling notes and corroboration guidance.
+

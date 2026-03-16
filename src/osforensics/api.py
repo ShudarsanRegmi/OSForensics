@@ -29,6 +29,7 @@ Explorer endpoints (Autopsy-style navigation):
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 import shutil
@@ -49,7 +50,7 @@ from .agent_core import get_agent
 from .browser import detect_browsers
 from .cases import (
     list_cases, create_case, get_case, update_case, delete_case,
-    add_data_source, remove_data_source,
+    add_data_source, remove_data_source, append_case_audit,
 )
 from .classifier import classify_findings
 from .config import analyze_configs
@@ -109,6 +110,73 @@ app.add_middleware(
 )
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _compute_file_hashes(path: str) -> dict:
+    """Return cryptographic fingerprints for regular files."""
+    if not path or not os.path.isfile(path):
+        return {}
+    sha256 = hashlib.sha256()
+    sha1 = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            if not chunk:
+                break
+            sha256.update(chunk)
+            sha1.update(chunk)
+    return {
+        "sha256": sha256.hexdigest(),
+        "sha1": sha1.hexdigest(),
+        "size_bytes": os.path.getsize(path),
+    }
+
+
+def _legal_disclaimer() -> dict:
+    return {
+        "forensic_safe_environment": True,
+        "original_evidence_unmodified": True,
+        "notes": [
+            "Analysis performed in a forensic-safe, read-focused environment.",
+            "Original evidence should remain unmodified and preserved separately.",
+            "Findings should be corroborated with additional investigative methods.",
+        ],
+    }
+
+
+def _attach_legal_context(
+    out: dict,
+    *,
+    evidence_file: str,
+    extraction_method: str,
+    integrity_hashes: Optional[dict] = None,
+) -> dict:
+    """Attach legal-awareness metadata to analysis output."""
+    hashes = integrity_hashes or {}
+    out["evidence_integrity"] = {
+        "evidence_file": evidence_file,
+        "hashes": hashes,
+        "acquisition_time": _utc_now(),
+    }
+    out["evidence_provenance"] = [
+        {
+            "artifact": evidence_file,
+            "source": evidence_file,
+            "extraction_method": extraction_method,
+        }
+    ]
+    out["audit_log"] = out.get("audit_log") or []
+    out["audit_log"].append({
+        "timestamp": _utc_now(),
+        "actor": "osforensics",
+        "action": "analysis_executed",
+        "details": {"evidence_file": evidence_file, "extraction_method": extraction_method},
+    })
+    out["legal_disclaimer"] = _legal_disclaimer()
+    return out
+
+
 # ── Shared helper ─────────────────────────────────────────────────────────────
 
 def _full_analysis(fs: FilesystemAccessor, tails_focus: bool = False) -> dict:
@@ -155,7 +223,12 @@ def _live_analysis(req: "LiveScanRequest") -> dict:
                           containers=containers)
     out = report.dict()
     out.setdefault("summary", {})["analysis_mode"] = "live_system"
-    return out
+    return _attach_legal_context(
+        out,
+        evidence_file="/",
+        extraction_method="live_host_filesystem_scan",
+        integrity_hashes={},
+    )
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -168,7 +241,14 @@ def analyze(req: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
-        return _full_analysis(fs)
+        out = _full_analysis(fs)
+        hashes = _compute_file_hashes(req.image_path)
+        return _attach_legal_context(
+            out,
+            evidence_file=req.image_path,
+            extraction_method="filesystem_accessor_full_analysis",
+            integrity_hashes=hashes,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
 
@@ -181,7 +261,14 @@ def analyze_tails_os(req: AnalyzeRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     try:
-        return _full_analysis(fs, tails_focus=True)
+        out = _full_analysis(fs, tails_focus=True)
+        hashes = _compute_file_hashes(req.image_path)
+        return _attach_legal_context(
+            out,
+            evidence_file=req.image_path,
+            extraction_method="filesystem_accessor_tails_analysis",
+            integrity_hashes=hashes,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
 
@@ -195,7 +282,14 @@ def upload_image(file: UploadFile = File(...)):
         with open(tmp_path, "wb") as out_f:
             shutil.copyfileobj(file.file, out_f)
         fs = FilesystemAccessor(tmp_path)
-        return _full_analysis(fs)
+        out = _full_analysis(fs)
+        hashes = _compute_file_hashes(tmp_path)
+        return _attach_legal_context(
+            out,
+            evidence_file=file.filename or tmp_path,
+            extraction_method="uploaded_image_tempfile_analysis",
+            integrity_hashes=hashes,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
     finally:
@@ -635,7 +729,12 @@ def _ssh_analysis(req: SSHAnalyzeRequest) -> dict:
             "scheme": "remote_ssh",
         }
         out["acquisition"] = snapshot.to_dict()
-        return out
+        return _attach_legal_context(
+            out,
+            evidence_file=f"ssh://{req.username}@{req.host}:{req.port}",
+            extraction_method="ssh_snapshot_via_sftp_then_local_analysis",
+            integrity_hashes={},
+        )
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -803,7 +902,12 @@ def _sshfs_analysis(req: SSHFSMountAnalyzeRequest) -> dict:
             "remote_path": remote_path,
             "readonly": True,
         }
-        return out
+        return _attach_legal_context(
+            out,
+            evidence_file=f"sshfs://{req.username}@{req.host}:{req.port}{remote_path}",
+            extraction_method="sshfs_readonly_mount_then_local_analysis",
+            integrity_hashes={},
+        )
     finally:
         if mounted:
             unmount_warning = _try_unmount(mount_dir)
@@ -1155,8 +1259,31 @@ def cases_analyze(case_id: str, req: CaseAnalyzeRequest):
 
     try:
         report = _full_analysis(fs)
+        hashes = _compute_file_hashes(req.image_path)
+        report = _attach_legal_context(
+            report,
+            evidence_file=req.image_path,
+            extraction_method="filesystem_accessor_full_analysis",
+            integrity_hashes=hashes,
+        )
         label  = os.path.basename(req.image_path.rstrip("/")) or req.image_path
-        source = add_data_source(case_id, req.image_path, label, report)
+        case_obj = get_case(case_id)
+        actor = case_obj.get("examiner") or "system"
+        source = add_data_source(
+            case_id,
+            req.image_path,
+            label,
+            report,
+            evidence={"acquisition_time": _utc_now(), "hashes": hashes},
+            provenance={
+                "source": req.image_path,
+                "extraction_method": "filesystem_accessor_full_analysis",
+                "original_path": req.image_path,
+            },
+            actor=actor,
+            verified_by=actor,
+        )
+        append_case_audit(case_id, "analysis_module_executed", actor="osforensics", details={"module": "full_analysis", "source_id": source.get("id")})
         return {"source": source, "report": report}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
@@ -1179,9 +1306,32 @@ def cases_analyze_tails(case_id: str, req: CaseAnalyzeRequest):
 
     try:
         report = _full_analysis(fs, tails_focus=True)
+        hashes = _compute_file_hashes(req.image_path)
+        report = _attach_legal_context(
+            report,
+            evidence_file=req.image_path,
+            extraction_method="filesystem_accessor_tails_analysis",
+            integrity_hashes=hashes,
+        )
         label_base = os.path.basename(req.image_path.rstrip("/")) or req.image_path
         label = f"{label_base} (TailsOS)"
-        source = add_data_source(case_id, req.image_path, label, report)
+        case_obj = get_case(case_id)
+        actor = case_obj.get("examiner") or "system"
+        source = add_data_source(
+            case_id,
+            req.image_path,
+            label,
+            report,
+            evidence={"acquisition_time": _utc_now(), "hashes": hashes},
+            provenance={
+                "source": req.image_path,
+                "extraction_method": "filesystem_accessor_tails_analysis",
+                "original_path": req.image_path,
+            },
+            actor=actor,
+            verified_by=actor,
+        )
+        append_case_audit(case_id, "analysis_module_executed", actor="osforensics", details={"module": "tails_analysis", "source_id": source.get("id")})
         return {"source": source, "report": report}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
@@ -1205,7 +1355,23 @@ def cases_analyze_live(case_id: str, req: LiveScanRequest = None):
         host = info.get("hostname") or "live-host"
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
         label = f"Live System ({host}) [{ts}]"
-        source = add_data_source(case_id, "/", label, report)
+        case_obj = get_case(case_id)
+        actor = case_obj.get("examiner") or "system"
+        source = add_data_source(
+            case_id,
+            "/",
+            label,
+            report,
+            evidence={"acquisition_time": _utc_now(), "hashes": {}},
+            provenance={
+                "source": "/",
+                "extraction_method": "live_host_filesystem_scan",
+                "original_path": "/",
+            },
+            actor=actor,
+            verified_by=actor,
+        )
+        append_case_audit(case_id, "analysis_module_executed", actor="osforensics", details={"module": "live_analysis", "source_id": source.get("id")})
         return {"source": source, "report": report, "live_info": info}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
@@ -1226,7 +1392,23 @@ def cases_analyze_ssh(case_id: str, req: SSHAnalyzeRequest):
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
         label = f"Remote SSH ({req.username}@{req.host}:{req.port}) [{ts}]"
         source_path = f"ssh://{req.username}@{req.host}:{req.port}"
-        source = add_data_source(case_id, source_path, label, report)
+        case_obj = get_case(case_id)
+        actor = case_obj.get("examiner") or "system"
+        source = add_data_source(
+            case_id,
+            source_path,
+            label,
+            report,
+            evidence={"acquisition_time": _utc_now(), "hashes": {}},
+            provenance={
+                "source": source_path,
+                "extraction_method": "ssh_snapshot_via_sftp_then_local_analysis",
+                "original_path": source_path,
+            },
+            actor=actor,
+            verified_by=actor,
+        )
+        append_case_audit(case_id, "analysis_module_executed", actor="osforensics", details={"module": "remote_ssh_analysis", "source_id": source.get("id")})
         return {"source": source, "report": report}
     except RemoteSnapshotError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1252,7 +1434,23 @@ def cases_analyze_sshfs(case_id: str, req: SSHFSMountAnalyzeRequest):
             remote_path = f"/{remote_path}"
         label = f"Remote SSHFS ({req.username}@{req.host}:{req.port}{remote_path}) [{ts}]"
         source_path = f"sshfs://{req.username}@{req.host}:{req.port}{remote_path}"
-        source = add_data_source(case_id, source_path, label, report)
+        case_obj = get_case(case_id)
+        actor = case_obj.get("examiner") or "system"
+        source = add_data_source(
+            case_id,
+            source_path,
+            label,
+            report,
+            evidence={"acquisition_time": _utc_now(), "hashes": {}},
+            provenance={
+                "source": source_path,
+                "extraction_method": "sshfs_readonly_mount_then_local_analysis",
+                "original_path": source_path,
+            },
+            actor=actor,
+            verified_by=actor,
+        )
+        append_case_audit(case_id, "analysis_module_executed", actor="osforensics", details={"module": "remote_sshfs_analysis", "source_id": source.get("id")})
         return {"source": source, "report": report}
     except RemoteSnapshotError as e:
         raise HTTPException(status_code=400, detail=str(e))

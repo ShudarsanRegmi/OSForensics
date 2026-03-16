@@ -167,202 +167,203 @@ function ContainerTab({ data = {} }) {
   const execCmds = ((data.execution || {}).commands || []);
   const offensive = data.offensive_tools || [];
   const risk = data.risk || {};
-  const runtime = data.runtime || {};
-  const k8s = data.kubernetes || {};
+  const riskChain = data.attack_chain || [];
+  const k8sData = data.kubernetes || data.k8s || {};
 
-  if (!data.detected) {
-    return (
-      <div className="tab-content">
-        <div className="empty-state">
-          <Box size={34} style={{ opacity: .35 }} />
-          <p style={{ marginTop: 10 }}>No container artifacts detected for this source.</p>
-        </div>
-      </div>
-    );
-  }
+  const renderEmpty = (message) => (
+    <div className="empty-state">
+      <Box size={28} />
+      <p>{message}</p>
+    </div>
+  );
 
   return (
     <div className="tab-content">
-      <div className="ct-head">
-        <div className="ct-head-title"><Box size={14} /> Container Forensics Engine</div>
-        <div className="ct-head-stats">
-          <span className="tag">Runtime: {runtime.primary || "unknown"}</span>
-          <span className="tag">Containers: {risk.container_count || inventory.length}</span>
-          <span className="tag">Active: {risk.active_count || 0}</span>
-          <span className="tag"><AlertTriangle size={10} /> High Risk: {(risk.high_risk_containers || []).length}</span>
-        </div>
-      </div>
-
-      <div className="ct-subtabs">
+      <div className="ct-toolbar" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         {CONTAINER_SECTIONS.map(([id, label]) => (
-          <button key={id} className={`ct-subtab ${section === id ? "active" : ""}`} onClick={() => setSection(id)}>
+          <button
+            key={id}
+            className={`case-tab ${section === id ? "active" : ""}`}
+            onClick={() => setSection(id)}
+          >
             {label}
           </button>
         ))}
       </div>
 
       {section === "overview" && (
-        <div className="ct-block">
+        <div className="ct-block" style={{ display: "grid", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+            <div className="stat-card"><strong>{inventory.length}</strong><span>Containers</span></div>
+            <div className="stat-card"><strong>{images.length}</strong><span>Images</span></div>
+            <div className="stat-card"><strong>{fsChanges.length}</strong><span>Filesystem Changes</span></div>
+            <div className="stat-card"><strong>{execCmds.length}</strong><span>Commands</span></div>
+            <div className="stat-card"><strong>{netConns.length}</strong><span>Connections</span></div>
+            <div className="stat-card"><strong>{deleted.length}</strong><span>Deleted Artifacts</span></div>
+          </div>
           <table className="rp-table">
             <tbody>
-              <tr><td>Detected Runtimes</td><td>{(runtime.detected || []).join(", ") || "None"}</td></tr>
-              <tr><td>Runtime Evidence</td><td><code>{(runtime.evidence || []).join(" | ") || "-"}</code></td></tr>
-              <tr><td>Container Count</td><td>{risk.container_count || inventory.length}</td></tr>
-              <tr><td>Active Containers</td><td>{risk.active_count || 0}</td></tr>
-              <tr><td>Max Risk Score</td><td>{risk.max_score || 0}</td></tr>
+              <tr><td>Cluster / Scope</td><td>{data.cluster || data.scope || "-"}</td></tr>
+              <tr><td>Risk Score</td><td>{risk.score ?? risk.total ?? "-"}</td></tr>
+              <tr><td>Attack Chain Nodes</td><td>{riskChain.length}</td></tr>
+              <tr><td>Offensive Tool Hits</td><td>{offensive.length}</td></tr>
             </tbody>
           </table>
         </div>
       )}
 
       {section === "inventory" && (
-        <div className="ct-block">
+        inventory.length === 0 ? renderEmpty("No containers in inventory.") : (
           <table className="rp-table">
-            <thead><tr><th>ID</th><th>Name</th><th>Image</th><th>Status</th><th>Created</th><th>Risk</th></tr></thead>
+            <thead><tr><th>Name</th><th>Role</th><th>Image</th><th>Risk</th><th>Status</th></tr></thead>
             <tbody>
-              {inventory.map((c) => (
-                <tr key={c.id}>
-                  <td><code>{String(c.id).slice(0, 12)}</code></td>
-                  <td>{c.name}</td>
-                  <td><code>{c.image}</code></td>
-                  <td>{c.status}</td>
-                  <td>{c.created || "-"}</td>
-                  <td>{c.risk_score}</td>
+              {inventory.map((c, i) => (
+                <tr key={c.id || c.name || i}>
+                  <td>{c.name || c.id || "-"}</td>
+                  <td>{c.role || "General"}</td>
+                  <td><code>{c.image || "-"}</code></td>
+                  <td>{c.risk_score ?? "-"}</td>
+                  <td>{c.status || "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        )
       )}
 
       {section === "images" && (
-        <div className="ct-block">
+        images.length === 0 ? renderEmpty("No images reported.") : (
           <table className="rp-table">
-            <thead><tr><th>Image</th><th>Digest</th><th>Source</th><th>Suspicious Build Commands</th></tr></thead>
+            <thead><tr><th>Image</th><th>Tag</th><th>Digest</th><th>Size</th></tr></thead>
             <tbody>
-              {images.map((i, idx) => (
-                <tr key={`${i.image}-${idx}`}>
-                  <td><code>{i.image}</code></td>
-                  <td><code>{i.digest || "-"}</code></td>
-                  <td>{i.source || "unknown"}</td>
-                  <td>{(i.suspicious_commands || []).slice(0, 3).join(" | ") || "-"}</td>
+              {images.map((img, i) => (
+                <tr key={img.id || img.name || i}>
+                  <td>{img.name || img.repository || "-"}</td>
+                  <td>{img.tag || "-"}</td>
+                  <td><code>{img.digest || "-"}</code></td>
+                  <td>{img.size || "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        )
       )}
 
       {section === "filesystem" && (
-        <div className="ct-block">
-          {(fsChanges.length === 0 && deleted.length === 0) ? (
-            <div className="empty-state" style={{ padding: 20 }}>No layered filesystem deltas recovered.</div>
-          ) : (
-            <>
-              {fsChanges.length > 0 && (
-                <table className="rp-table" style={{ marginBottom: 10 }}>
-                  <thead><tr><th>Container</th><th>UpperDir</th><th>Modified Files</th></tr></thead>
-                  <tbody>
-                    {fsChanges.map((f, i) => (
-                      <tr key={i}>
-                        <td>{f.container}</td>
-                        <td><code>{f.upperdir}</code></td>
-                        <td><code>{(f.modified_files || []).slice(0, 5).join(" | ")}</code></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              {deleted.length > 0 && (
-                <table className="rp-table">
-                  <thead><tr><th>Deleted/Orphan Artifact</th><th>Detail</th></tr></thead>
-                  <tbody>
-                    {deleted.map((d, i) => <tr key={i}><td><code>{d.artifact}</code></td><td>{d.detail}</td></tr>)}
-                  </tbody>
-                </table>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {section === "execution" && (
-        <div className="ct-block">
+        fsChanges.length === 0 ? renderEmpty("No filesystem changes detected.") : (
           <table className="rp-table">
-            <thead><tr><th>Container</th><th>Recovered Commands</th></tr></thead>
+            <thead><tr><th>Path</th><th>Change</th><th>Container</th><th>Detail</th></tr></thead>
             <tbody>
-              {execCmds.map((x, i) => (
-                <tr key={i}><td>{x.container}</td><td><code>{(x.commands || []).join(" | ") || "-"}</code></td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {section === "network" && (
-        <div className="ct-block">
-          <table className="rp-table">
-            <thead><tr><th>Container</th><th>Connection</th></tr></thead>
-            <tbody>
-              {netConns.slice(0, 120).map((n, i) => (
-                <tr key={i}><td>{n.container}</td><td><code>{n.connection}</code></td></tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {section === "privilege" && (
-        <div className="ct-block">
-          <table className="rp-table">
-            <thead><tr><th>Container</th><th>Severity</th><th>Reasons</th></tr></thead>
-            <tbody>
-              {privilegeFindings.map((p, i) => (
-                <tr key={i}>
-                  <td>{p.container}</td>
-                  <td><SevBadge sev={p.severity || "medium"} /></td>
-                  <td><code>{(p.reasons || []).join(", ")}</code></td>
+              {fsChanges.map((change, i) => (
+                <tr key={change.path || i}>
+                  <td><code>{change.path || "-"}</code></td>
+                  <td>{change.type || change.change || "-"}</td>
+                  <td>{change.container || "-"}</td>
+                  <td>{change.detail || "-"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="ct-inline-note">Escape indicators: <code>{((data.privilege || {}).escape_indicators || []).join(", ") || "none"}</code></div>
-        </div>
+        )
+      )}
+
+      {section === "execution" && (
+        execCmds.length === 0 ? renderEmpty("No command execution history available.") : (
+          <table className="rp-table">
+            <thead><tr><th>Timestamp</th><th>Container</th><th>Command</th><th>User</th></tr></thead>
+            <tbody>
+              {execCmds.map((cmd, i) => (
+                <tr key={i}>
+                  <td>{fmtDate(cmd.timestamp)}</td>
+                  <td>{cmd.container || "-"}</td>
+                  <td><code>{cmd.command || cmd.cmd || "-"}</code></td>
+                  <td>{cmd.user || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      )}
+
+      {section === "network" && (
+        netConns.length === 0 ? renderEmpty("No network connections captured.") : (
+          <table className="rp-table">
+            <thead><tr><th>Container</th><th>Protocol</th><th>Source</th><th>Destination</th><th>State</th></tr></thead>
+            <tbody>
+              {netConns.map((conn, i) => (
+                <tr key={i}>
+                  <td>{conn.container || "-"}</td>
+                  <td>{conn.protocol || "-"}</td>
+                  <td><code>{conn.source || conn.src || "-"}</code></td>
+                  <td><code>{conn.destination || conn.dst || "-"}</code></td>
+                  <td>{conn.state || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      )}
+
+      {section === "privilege" && (
+        privilegeFindings.length === 0 ? renderEmpty("No privilege findings reported.") : (
+          <table className="rp-table">
+            <thead><tr><th>Container</th><th>Severity</th><th>Finding</th><th>Detail</th></tr></thead>
+            <tbody>
+              {privilegeFindings.map((finding, i) => (
+                <tr key={i}>
+                  <td>{finding.container || "-"}</td>
+                  <td>{finding.severity || "-"}</td>
+                  <td>{finding.title || finding.finding || "-"}</td>
+                  <td>{finding.detail || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
       )}
 
       {section === "deleted" && (
-        <div className="ct-block">
+        deleted.length === 0 ? renderEmpty("No deleted artifacts were recovered.") : (
           <table className="rp-table">
-            <thead><tr><th>Artifact</th><th>Detail</th></tr></thead>
+            <thead><tr><th>Path</th><th>Container</th><th>Recovered</th><th>Detail</th></tr></thead>
             <tbody>
-              {deleted.map((d, i) => <tr key={i}><td><code>{d.artifact}</code></td><td>{d.detail}</td></tr>)}
+              {deleted.map((item, i) => (
+                <tr key={item.path || i}>
+                  <td><code>{item.path || "-"}</code></td>
+                  <td>{item.container || "-"}</td>
+                  <td>{item.recovered ? "Yes" : "No"}</td>
+                  <td>{item.detail || "-"}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
+        )
       )}
 
       {section === "timeline" && (
-        <div className="ct-block">
+        timeline.length === 0 ? renderEmpty("No timeline events available.") : (
           <table className="rp-table">
-            <thead><tr><th>Timestamp</th><th>Event</th></tr></thead>
+            <thead><tr><th>Timestamp</th><th>Container</th><th>Event</th><th>Detail</th></tr></thead>
             <tbody>
-              {timeline.map((t, i) => <tr key={i}><td>{t.timestamp}</td><td>{t.event}</td></tr>)}
+              {timeline.map((ev, i) => (
+                <tr key={i}>
+                  <td>{fmtDate(ev.timestamp)}</td>
+                  <td>{ev.container || "-"}</td>
+                  <td>{ev.event || ev.type || "-"}</td>
+                  <td>{ev.detail || "-"}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
+        )
       )}
 
       {section === "k8s" && (
-        <div className="ct-block">
-          <table className="rp-table">
-            <tbody>
-              <tr><td>Kubernetes Detected</td><td>{k8s.detected ? "Yes" : "No"}</td></tr>
-              <tr><td>Evidence</td><td><code>{(k8s.evidence || []).join(" | ") || "-"}</code></td></tr>
-              <tr><td>Pods</td><td>{(k8s.pods || []).length}</td></tr>
-              <tr><td>Suspicious Pods</td><td><code>{(k8s.suspicious_pods || []).join(", ") || "none"}</code></td></tr>
-            </tbody>
-          </table>
-        </div>
+        Object.keys(k8sData).length === 0 ? renderEmpty("No Kubernetes metadata detected.") : (
+          <div className="ct-block">
+            <pre className="json-block" style={{ margin: 0 }}>{JSON.stringify(k8sData, null, 2)}</pre>
+          </div>
+        )
       )}
 
       {section === "risk" && (
@@ -370,12 +371,12 @@ function ContainerTab({ data = {} }) {
           <table className="rp-table" style={{ marginBottom: 10 }}>
             <thead><tr><th>Container</th><th>Role</th><th>Risk</th><th>Reasons</th></tr></thead>
             <tbody>
-              {inventory.slice(0, 40).map((c) => (
-                <tr key={c.id}>
-                  <td>{c.name}</td>
+              {inventory.slice(0, 40).map((c, i) => (
+                <tr key={c.id || c.name || i}>
+                  <td>{c.name || "-"}</td>
                   <td>{c.role || "General"}</td>
-                  <td>{c.risk_score}</td>
-                  <td><code>{(c.risk_reasons || []).join(", ")}</code></td>
+                  <td>{c.risk_score ?? "-"}</td>
+                  <td><code>{(c.risk_reasons || []).join(", ") || "-"}</code></td>
                 </tr>
               ))}
             </tbody>
@@ -383,13 +384,13 @@ function ContainerTab({ data = {} }) {
           <table className="rp-table">
             <thead><tr><th>Attack Chain Node</th><th>Role</th><th>Reasons</th></tr></thead>
             <tbody>
-              {(data.attack_chain || []).map((a, i) => (
-                <tr key={i}><td>{a.container}</td><td>{a.role}</td><td><code>{(a.reasons || []).join(", ")}</code></td></tr>
+              {riskChain.map((a, i) => (
+                <tr key={i}><td>{a.container || "-"}</td><td>{a.role || "-"}</td><td><code>{(a.reasons || []).join(", ") || "-"}</code></td></tr>
               ))}
             </tbody>
           </table>
           {offensive.length > 0 && (
-            <div className="ct-inline-note">Offensive tools detected in containers: <code>{offensive.map(o => `${o.container}=[${(o.tools || []).join(',')}]`).join(" | ")}</code></div>
+            <div className="ct-inline-note">Offensive tools detected in containers: <code>{offensive.map((o) => `${o.container}=[${(o.tools || []).join(",")}]`).join(" | ")}</code></div>
           )}
         </div>
       )}
@@ -5019,6 +5020,30 @@ function CasesView({ onOpen, onNewCase }) {
 function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAddTailsSource, onAddTailsUsbSource, onScanLiveToCase, onDeleteSource, onBack }) {
   const [activeTab, setActiveTab] = useState("sources");
   const { data_sources = [] } = caseData;
+  const chainOfCustody = caseData.chain_of_custody || [];
+  const auditLog = caseData.audit_log || [];
+
+  const shortHash = (h) => {
+    if (!h) return "-";
+    return h.length > 20 ? `${h.slice(0, 12)}...${h.slice(-8)}` : h;
+  };
+
+  const evidenceRows = data_sources.map((src) => {
+    const ev = src.evidence || {};
+    const prov = src.provenance || {};
+    return {
+      sourceId: src.id,
+      label: src.label || src.path,
+      path: src.path,
+      evidenceId: ev.evidence_id || "-",
+      acquiredAt: ev.acquisition_time || src.added_at,
+      sha256: ev.hashes?.sha256 || "",
+      sha1: ev.hashes?.sha1 || "",
+      extractionMethod: prov.extraction_method || "-",
+      originalPath: prov.original_path || src.path,
+      integrity: ev.hashes || {},
+    };
+  });
 
   const threatSummary = (src) => {
     const hi = src.report?.summary?.total_high ?? 0;
@@ -5064,7 +5089,14 @@ function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAd
 
       {/* Tab bar */}
       <div className="case-tabs">
-        {[["sources", HardDrive, "Data Sources"], ["info", Info, "Case Info"]].map(([id, Icon, label]) => (
+        {[
+          ["sources", HardDrive, "Data Sources"],
+          ["integrity", Hash, "Integrity"],
+          ["evidence", Hash, `Evidence (${evidenceRows.length})`],
+          ["custody", Shield, `Chain of Custody (${chainOfCustody.length})`],
+          ["audit", Activity, `Audit Log (${auditLog.length})`],
+          ["info", Info, "Case Info"],
+        ].map(([id, Icon, label]) => (
           <button key={id} className={`case-tab ${activeTab === id ? "active" : ""}`} onClick={() => setActiveTab(id)}>
             <Icon size={13} />{label}
           </button>
@@ -5122,6 +5154,133 @@ function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAd
                 );
               })}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Integrity tab */}
+      {activeTab === "integrity" && (
+        <div className="case-info">
+          {evidenceRows.length === 0 ? (
+            <div className="cases-empty" style={{ paddingTop: 30 }}>
+              <Hash size={36} strokeWidth={1.2} className="cases-empty-icon" />
+              <p>No integrity records yet.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              {evidenceRows.map((row) => {
+                const extraHashes = Object.entries(row.integrity).filter(([key]) => key !== "sha256" && key !== "sha1");
+                return (
+                  <div key={row.sourceId} style={{ border: "1px solid var(--border-lt)", borderRadius: "var(--radius)", padding: "12px 14px", background: "#fff" }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <strong style={{ fontSize: 13 }}>{row.label}</strong>
+                    </div>
+                    <table className="rp-table" style={{ maxWidth: "100%" }}>
+                      <tbody>
+                        <tr><td>SHA256</td><td><code style={{ fontSize: 11, wordBreak: "break-all" }}>{row.sha256 || "-"}</code></td></tr>
+                        <tr><td>SHA1</td><td><code style={{ fontSize: 11, wordBreak: "break-all" }}>{row.sha1 || "-"}</code></td></tr>
+                        {extraHashes.map(([key, value]) => (
+                          <tr key={key}><td>{key.toUpperCase()}</td><td><code style={{ fontSize: 11, wordBreak: "break-all" }}>{value || "-"}</code></td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Evidence tab */}
+      {activeTab === "evidence" && (
+        <div className="case-info">
+          {evidenceRows.length === 0 ? (
+            <div className="cases-empty" style={{ paddingTop: 30 }}>
+              <Hash size={36} strokeWidth={1.2} className="cases-empty-icon" />
+              <p>No evidence records yet. Add a data source to generate integrity metadata.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 14 }}>
+              {evidenceRows.map((row) => (
+                <div key={row.sourceId} style={{ border: "1px solid var(--border-lt)", borderRadius: "var(--radius)", padding: "12px 14px", background: "#fff" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <strong style={{ fontSize: 13 }}>{row.label}</strong>
+                    <span className="tag"><Hash size={10} /> {row.evidenceId}</span>
+                  </div>
+                  <table className="rp-table" style={{ maxWidth: "100%" }}>
+                    <tbody>
+                      <tr><td>Path</td><td style={{ wordBreak: "break-all" }}>{row.path}</td></tr>
+                      <tr><td>Acquired</td><td>{fmtDate(row.acquiredAt)}</td></tr>
+                      <tr><td>SHA256</td><td><code style={{ fontSize: 11 }}>{shortHash(row.sha256)}</code></td></tr>
+                      <tr><td>SHA1</td><td><code style={{ fontSize: 11 }}>{shortHash(row.sha1)}</code></td></tr>
+                      <tr><td>Extraction</td><td>{row.extractionMethod}</td></tr>
+                      <tr><td>Original Path</td><td style={{ wordBreak: "break-all" }}>{row.originalPath}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Chain of custody tab */}
+      {activeTab === "custody" && (
+        <div className="case-info">
+          {chainOfCustody.length === 0 ? (
+            <div className="cases-empty" style={{ paddingTop: 30 }}>
+              <Shield size={36} strokeWidth={1.2} className="cases-empty-icon" />
+              <p>No chain-of-custody entries yet.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {chainOfCustody.map((ev, i) => (
+                <div key={`${ev.timestamp || "t"}-${ev.evidence_id || "ev"}-${i}`} style={{ border: "1px solid var(--border-lt)", borderRadius: "var(--radius)", padding: "10px 12px", background: "#fff" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                    <strong style={{ fontSize: 13 }}>{ev.action || "event"}</strong>
+                    <span className="tag"><Clock size={10} /> {fmtDate(ev.timestamp)}</span>
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 12, color: "var(--fg-muted)" }}>
+                    Evidence: <code>{ev.evidence_id || "-"}</code> | Collected by: {ev.collected_by || "-"} | Verified by: {ev.verified_by || "-"}
+                  </div>
+                  {ev.notes && <div style={{ marginTop: 6, fontSize: 12 }}>{ev.notes}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Audit tab */}
+      {activeTab === "audit" && (
+        <div className="case-info">
+          {auditLog.length === 0 ? (
+            <div className="cases-empty" style={{ paddingTop: 30 }}>
+              <Activity size={36} strokeWidth={1.2} className="cases-empty-icon" />
+              <p>No audit log entries yet.</p>
+            </div>
+          ) : (
+            <table className="rp-table" style={{ maxWidth: "100%" }}>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Actor</th>
+                  <th>Action</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLog.map((ev, i) => (
+                  <tr key={`${ev.timestamp || "a"}-${ev.action || "action"}-${i}`}>
+                    <td>{fmtDate(ev.timestamp)}</td>
+                    <td>{ev.actor || "-"}</td>
+                    <td>{ev.action || "-"}</td>
+                    <td><code style={{ fontSize: 11 }}>{JSON.stringify(ev.details || {})}</code></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}
