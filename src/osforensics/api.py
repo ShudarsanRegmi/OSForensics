@@ -206,6 +206,27 @@ def _attach_legal_context(
     return out
 
 
+def _is_tails_os(os_info: Optional[dict]) -> bool:
+    """Return True when OS metadata strongly indicates Tails OS."""
+    if not os_info:
+        return False
+
+    # Only treat explicit Tails identifiers as a match.
+    # Generic live/privacy tags should not trigger Tails heuristics.
+    direct_values = [
+        str(os_info.get("name") or "").lower(),
+        str(os_info.get("id") or "").lower(),
+    ]
+    if any("tails" in value for value in direct_values):
+        return True
+
+    for tag in os_info.get("variant_tags", []) or []:
+        if "tails" in str(tag).lower():
+            return True
+
+    return False
+
+
 # ── Shared helper ─────────────────────────────────────────────────────────────
 
 def _full_analysis(fs: FilesystemAccessor, tails_focus: bool = False) -> dict:
@@ -219,7 +240,7 @@ def _full_analysis(fs: FilesystemAccessor, tails_focus: bool = False) -> dict:
     services   = detect_services(fs)
     browsers   = detect_browsers(fs)
     multimedia = analyze_multimedia(fs)
-    tails      = analyze_tails(fs, tool_findings=classified)
+    tails      = analyze_tails(fs, tool_findings=classified) if (tails_focus or _is_tails_os(os_info)) else []
     antiforensics = detect_antiforensics(fs)
     containers = analyze_containers(fs)
     report = build_report(os_info, classified, timeline=timeline, deleted=deleted,
@@ -245,7 +266,7 @@ def _live_analysis(req: "LiveScanRequest") -> dict:
     services    = detect_services(fs)      if req.services    else []
     browsers    = detect_browsers(fs)      if req.browsers    else []
     multimedia  = analyze_multimedia(fs)   if req.multimedia  else []
-    tails       = analyze_tails(fs, tool_findings=classified)
+    tails       = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else []
     antiforensics = detect_antiforensics(fs)
     containers  = analyze_containers(fs)
     report = build_report(os_info, classified, timeline=timeline, deleted=deleted,
@@ -778,7 +799,7 @@ def _ssh_analysis(req: SSHAnalyzeRequest) -> dict:
         services    = detect_services(fs)     if req.services    else []
         browsers    = detect_browsers(fs)     if req.browsers    else []
         multimedia  = analyze_multimedia(fs)  if req.multimedia  else []
-        tails       = analyze_tails(fs, tool_findings=classified)
+        tails       = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else []
         containers  = analyze_containers(fs)
         report = build_report(
             os_info,
@@ -933,7 +954,7 @@ def _sshfs_analysis(req: SSHFSMountAnalyzeRequest) -> dict:
         services    = detect_services(fs)     if req.services    else []
         browsers    = detect_browsers(fs)     if req.browsers    else []
         multimedia  = analyze_multimedia(fs)  if req.multimedia  else []
-        tails       = analyze_tails(fs, tool_findings=classified)
+        tails       = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else []
         containers  = analyze_containers(fs)
         report = build_report(
             os_info,

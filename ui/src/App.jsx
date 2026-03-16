@@ -4804,6 +4804,18 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExportJson, onExpor
   const moreMeasureRef = useRef(null);
   const { summary } = report;
   const isLive = !!liveInfo;
+  const isTailsReport = useMemo(() => {
+    const osName = String(report?.os_info?.name || "").toLowerCase();
+    const osId = String(report?.os_info?.id || "").toLowerCase();
+    const tags = (report?.os_info?.variant_tags || []).map((t) => String(t).toLowerCase());
+    const analysisMode = String(report?.summary?.analysis_mode || "").toLowerCase();
+    return (
+      osName.includes("tails") ||
+      osId.includes("tails") ||
+      tags.some((t) => t.includes("tails")) ||
+      analysisMode === "tails_os"
+    );
+  }, [report]);
 
   const rangeMs = useMemo(() => {
     const fromMs = dateRangeApplied.from ? parseDateToMs(dateRangeApplied.from) : null;
@@ -4859,8 +4871,12 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExportJson, onExpor
   const highTailsFiltered = (report.tails || []).filter((t) => t.severity === "high" || t.severity === "critical").length;
   const containersDetected = !!(report.containers && report.containers.detected);
   const reportTabs = useMemo(
-    () => REPORT_TABS.filter((t) => t.id !== "containers" || containersDetected),
-    [containersDetected]
+    () => REPORT_TABS.filter((t) => {
+      if (t.id === "containers" && !containersDetected) return false;
+      if (t.id === "tails" && !isTailsReport) return false;
+      return true;
+    }),
+    [containersDetected, isTailsReport]
   );
 
   useEffect(() => {
