@@ -717,7 +717,10 @@ class LiveScanRequest(BaseModel):
     config:      bool = True
     services:    bool = True
     browsers:    bool = True
-    multimedia:  bool = False
+    # Enable multimedia analysis by default so the Multimedia tab
+    # is populated on a standard live scan without requiring a
+    # separate rescan from the UI.
+    multimedia:  bool = True
 
 
 class SSHAnalyzeRequest(BaseModel):
@@ -744,7 +747,7 @@ class SSHAnalyzeRequest(BaseModel):
     config:      bool = True
     services:    bool = True
     browsers:    bool = True
-    multimedia:  bool = False
+    multimedia:  bool = True
 
 
 class SSHFSMountAnalyzeRequest(BaseModel):
@@ -766,7 +769,7 @@ class SSHFSMountAnalyzeRequest(BaseModel):
     config:      bool = True
     services:    bool = True
     browsers:    bool = True
-    multimedia:  bool = False
+    multimedia:  bool = True
 
 
 def _ssh_analysis(req: SSHAnalyzeRequest) -> dict:

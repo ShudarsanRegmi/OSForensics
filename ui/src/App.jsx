@@ -4632,6 +4632,174 @@ function MultimediaTab({ findings = [], imgPath }) {
       </div>
     );
   }
+  const hasItems = items.length > 0;
+  const currentIndex = viewItem
+    ? items.findIndex((i) => i.path === viewItem.path)
+    : -1;
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < items.length - 1;
+
+  const handleView = (item) => setViewItem(item);
+  const handlePrev = () => {
+    if (!hasPrev) return;
+    setViewItem(items[currentIndex - 1]);
+  };
+  const handleNext = () => {
+    if (!hasNext) return;
+    setViewItem(items[currentIndex + 1]);
+  };
+
+  return (
+    <div className="tab-content">
+      {/* Summary bar */}
+      <div className="mm-summary-bar">
+        <span className="del-sum-chip neutral">
+          <Image size={11} /> {localFindings.length} media files
+        </span>
+        {counts.image > 0 && (
+          <span className="del-sum-chip">
+            Images: {counts.image}
+          </span>
+        )}
+        {counts.video > 0 && (
+          <span className="del-sum-chip">
+            Videos: {counts.video}
+          </span>
+        )}
+        {counts.audio > 0 && (
+          <span className="del-sum-chip">
+            Audio: {counts.audio}
+          </span>
+        )}
+        {flagged > 0 && (
+          <span className="del-sum-chip red">
+            <AlertTriangle size={11} /> {flagged} flagged
+          </span>
+        )}
+        {withGps > 0 && (
+          <span className="del-sum-chip">
+            <MapPin size={11} /> {withGps} with GPS
+          </span>
+        )}
+        {imgPath && (
+          <button
+            className="btn-secondary btn-xs"
+            onClick={handleRescan}
+            disabled={running}
+            style={{ marginLeft: "auto" }}
+          >
+            {running ? "Scanning…" : "Rescan"}
+          </button>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="mm-filters">
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Type:</span>
+          {["all", "image", "video", "audio"].map((t) => (
+            <button
+              key={t}
+              className={
+                "btn-pill btn-xs" + (filterType === t ? " btn-pill-active" : "")
+              }
+              onClick={() => setFilterType(t)}
+            >
+              {t[0].toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+        <div className="mm-filter-group">
+          <span className="mm-filter-label">Severity:</span>
+          <select
+            className="input"
+            value={filterSev}
+            onChange={(e) => setFilterSev(e.target.value)}
+          >
+            <option value="all">All</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+          </select>
+        </div>
+        <div className="mm-filter-group" style={{ flex: 1 }}>
+          <input
+            className="input"
+            placeholder="Search path or findings…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="mm-filter-group">
+          <button
+            className={
+              "btn-icon" + (viewMode === "grid" ? " btn-icon-active" : "")
+            }
+            onClick={() => setViewMode("grid")}
+            title="Grid view"
+          >
+            ⬚
+          </button>
+          <button
+            className={
+              "btn-icon" + (viewMode === "list" ? " btn-icon-active" : "")
+            }
+            onClick={() => setViewMode("list")}
+            title="List view"
+          >
+            ☰
+          </button>
+        </div>
+      </div>
+
+      {/* Results */}
+      {!hasItems && (
+        <EmptyState icon={Image} message="No media files match current filters." />
+      )}
+      {hasItems && viewMode === "grid" && (
+        <div className="mm-grid">
+          {items.map((m) => (
+            <MediaCard
+              key={m.path}
+              item={m}
+              imgPath={imgPath}
+              onView={handleView}
+            />
+          ))}
+        </div>
+      )}
+      {hasItems && viewMode === "list" && (
+        <div className="mm-list">
+          {items.map((m) => (
+            <div
+              key={m.path}
+              className="mm-list-row"
+              onClick={() => handleView(m)}
+            >
+              <span className="mm-list-name">{m.name || m.path.split("/").pop()}</span>
+              <span className="mm-list-path">{m.path}</span>
+              <span className="mm-list-type">{m.media_type}</span>
+              <SevBadge sev={m.severity} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {viewItem && (
+        <MediaViewerModal
+          item={viewItem}
+          imgPath={imgPath}
+          onClose={() => setViewItem(null)}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+        />
+      )}
+    </div>
+  );
 }
 // ─── Tools Tab ────────────────────────────────────────────────────────────────
 
