@@ -89,16 +89,16 @@ When you need to call a tool:
   "args": {{"param": "value"}}
 }}
 
-When you have enough evidence to answer:
+When you have enough evidence to answer (or for general/normal chat questions):
 {{
-  "thought": "Final summary of investigation steps",
+  "thought": "Final summary of investigation steps or response reasoning",
   "action": "ANSWER",
-  "answer": "DETAILED FORENSIC REPORT IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
+  "answer": "DETAILED FORENSIC REPORT OR RESPONSE IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
 }}
 
 ## CONSTRAINTS
 - User's home directory is /home/dragon/ — all file paths are relative to this root
-- Always use at least one tool before answering
+- Use forensic tools if the query requires evidence gathering; otherwise, answer directly
 - Be specific — cite actual data values from tool results
 - Check for chrome and brave browser artifacts, as well as common persistence locations
 - DO NOT use wildcards (like '*') in file paths — tools expect specific paths or directory roots
@@ -159,22 +159,43 @@ def sanitize_escapes(text: str) -> str:
 
 
 def parse_json(text: str) -> dict:
-    """Extract and parse the JSON object from an LLM response."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-z]*\n?", "", text)
-        text = re.sub(r"\n?```\s*$", "", text.strip())
+    """Extract and parse the JSON object from an LLM response.
+    
+    If no valid JSON is found, returns a default 'ANSWER' structure 
+    using the raw text as the answer.
+    """
+    text_stripped = text.strip()
+    
+    # Try to find content inside markdown code blocks first
+    m_code = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text_stripped, re.DOTALL)
+    target = m_code.group(1) if m_code else None
+    
+    if not target:
+        # Fallback: search for the outermost braces
+        m_braces = re.search(r"(\{.*\})", text_stripped, re.DOTALL)
+        target = m_braces.group(1) if m_braces else None
 
-    text = sanitize_escapes(text)
-
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if m:
+    if target:
+        target = sanitize_escapes(target)
         try:
-            return json.loads(m.group())
+            return json.loads(target)
         except json.JSONDecodeError:
-            pass
+            # One last try: remove anything before the first { and after the last }
+            try:
+                start = target.find('{')
+                end = target.rfind('}') + 1
+                if start != -1 and end > 0:
+                    return json.loads(target[start:end])
+            except Exception:
+                pass
 
-    raise ValueError(f"No valid JSON in LLM response: {text[:300]!r}")
+    # If we reached here, no valid JSON was found. 
+    # Treat the entire response as a direct answer (Normal Chat).
+    return {
+        "thought": "Direct response generated.",
+        "action": "ANSWER",
+        "answer": text_stripped
+    }
 
 
 def _truncate(data: Any, max_chars: int = MAX_OBS_CHARS) -> str:

@@ -32,8 +32,10 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import traceback
 from typing import Optional
@@ -75,6 +77,13 @@ from .antiforensics import detect_antiforensics
 
 class AnalyzeRequest(BaseModel):
     image_path: str
+
+
+class TailsDeepScanRequest(BaseModel):
+    image_path: str
+    collect_dir: Optional[str] = None
+    max_copy_bytes: int = 25 * 1024 * 1024
+    no_collect: bool = False
 
 
 class ExploreRequest(BaseModel):
@@ -123,10 +132,19 @@ def favicon():
 # Allow the UI dev server to call this API during development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 
@@ -227,6 +245,70 @@ def _is_tails_os(os_info: Optional[dict]) -> bool:
     return False
 
 
+def _extract_tails_analysis(tails_result: dict | list) -> tuple[list, dict]:
+    """
+    Extract findings and artifacts from analyze_tails result.
+    Returns (findings_list, artifacts_dict) tuple.
+    Handles both new dict format and legacy list format for backward compatibility.
+    """
+    if isinstance(tails_result, dict):
+        # New format: dict with 'findings' and 'artifacts' keys
+        return (tails_result.get("findings", []), tails_result.get("artifacts", {}))
+    else:
+        # Legacy format: list of findings
+        return (tails_result, {})
+
+
+def _run_tails_deep_scan(req: TailsDeepScanRequest) -> dict:
+    """Execute standalone tails_volume_deep_scan.py and return parsed JSON report."""
+    repo_root = Path(__file__).resolve().parents[2]
+    scanner = repo_root / "tails_volume_deep_scan.py"
+    if not scanner.exists():
+        raise RuntimeError(f"Deep scanner script not found: {scanner}")
+
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%SZ")
+    output_path = Path(tempfile.gettempdir()) / f"tails_deep_api_{ts}.json"
+
+    cmd = [
+        sys.executable,
+        str(scanner),
+        "--mount",
+        req.image_path,
+        "--output",
+        str(output_path),
+        "--pretty",
+        "--summary-only",
+    ]
+    if req.no_collect:
+        cmd.append("--no-collect")
+    else:
+        if req.collect_dir:
+            cmd.extend(["--collect-dir", req.collect_dir])
+        cmd.extend(["--max-copy-bytes", str(max(1, int(req.max_copy_bytes)))])
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "Deep scan command failed"
+            f"\nexit={proc.returncode}"
+            f"\nstdout={proc.stdout[-4000:]}"
+            f"\nstderr={proc.stderr[-4000:]}"
+        )
+
+    if not output_path.exists():
+        raise RuntimeError("Deep scan completed but output JSON file was not produced")
+
+    with output_path.open("r", encoding="utf-8") as f:
+        deep = json.load(f)
+    deep.setdefault("meta", {})
+    deep["meta"]["api_wrapper"] = {
+        "command": " ".join(cmd),
+        "stdout_tail": proc.stdout[-2000:],
+        "stderr_tail": proc.stderr[-2000:],
+    }
+    return deep
+
+
 # ── Shared helper ─────────────────────────────────────────────────────────────
 
 def _full_analysis(fs: FilesystemAccessor, tails_focus: bool = False) -> dict:
@@ -240,12 +322,14 @@ def _full_analysis(fs: FilesystemAccessor, tails_focus: bool = False) -> dict:
     services   = detect_services(fs)
     browsers   = detect_browsers(fs)
     multimedia = analyze_multimedia(fs)
-    tails      = analyze_tails(fs, tool_findings=classified) if (tails_focus or _is_tails_os(os_info)) else []
+    tails_result = analyze_tails(fs, tool_findings=classified) if (tails_focus or _is_tails_os(os_info)) else {}
+    tails, tails_artifacts = _extract_tails_analysis(tails_result)
     antiforensics = detect_antiforensics(fs)
     containers = analyze_containers(fs)
     report = build_report(os_info, classified, timeline=timeline, deleted=deleted,
                           persistence=persistence, config=config, services=services,
                           browsers=browsers, multimedia=multimedia, tails=tails,
+                          tails_artifacts=tails_artifacts,
                           antiforensics=antiforensics, containers=containers)
     out = report.dict()
     if tails_focus:
@@ -266,12 +350,14 @@ def _live_analysis(req: "LiveScanRequest") -> dict:
     services    = detect_services(fs)      if req.services    else []
     browsers    = detect_browsers(fs)      if req.browsers    else []
     multimedia  = analyze_multimedia(fs)   if req.multimedia  else []
-    tails       = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else []
+    tails_result = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else {}
+    tails, tails_artifacts = _extract_tails_analysis(tails_result)
     antiforensics = detect_antiforensics(fs)
     containers  = analyze_containers(fs)
     report = build_report(os_info, classified, timeline=timeline, deleted=deleted,
                           persistence=persistence, config=config, services=services,
                           browsers=browsers, multimedia=multimedia, tails=tails,
+                          tails_artifacts=tails_artifacts,
                           antiforensics=antiforensics, containers=containers)
     out = report.dict()
     out.setdefault("summary", {})["analysis_mode"] = "live_system"
@@ -319,6 +405,33 @@ def analyze_tails_os(req: AnalyzeRequest):
             out,
             evidence_file=req.image_path,
             extraction_method="filesystem_accessor_tails_analysis",
+            integrity_hashes=hashes,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/analyze/tails/deep")
+def analyze_tails_deep(req: TailsDeepScanRequest):
+    """Run full Tails analysis and attach standalone deep scan artifacts."""
+    try:
+        fs = FilesystemAccessor(req.image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        out = _full_analysis(fs, tails_focus=True)
+        deep = _run_tails_deep_scan(req)
+        out.setdefault("tails_artifacts", {})["deep_scan"] = deep
+        # Expose key deep artifacts at top-level tails_artifacts for convenience in UI.
+        for k, v in (deep.get("artifacts") or {}).items():
+            out.setdefault("tails_artifacts", {}).setdefault(k, v)
+
+        hashes = _compute_file_hashes(req.image_path)
+        return _attach_legal_context(
+            out,
+            evidence_file=req.image_path,
+            extraction_method="filesystem_accessor_tails_deep_analysis",
             integrity_hashes=hashes,
         )
     except Exception as e:
@@ -802,7 +915,8 @@ def _ssh_analysis(req: SSHAnalyzeRequest) -> dict:
         services    = detect_services(fs)     if req.services    else []
         browsers    = detect_browsers(fs)     if req.browsers    else []
         multimedia  = analyze_multimedia(fs)  if req.multimedia  else []
-        tails       = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else []
+        tails_result = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else {}
+        tails, tails_artifacts = _extract_tails_analysis(tails_result)
         containers  = analyze_containers(fs)
         report = build_report(
             os_info,
@@ -815,6 +929,7 @@ def _ssh_analysis(req: SSHAnalyzeRequest) -> dict:
             browsers=browsers,
             multimedia=multimedia,
             tails=tails,
+            tails_artifacts=tails_artifacts,
             containers=containers,
         )
         out = report.dict()
@@ -957,7 +1072,8 @@ def _sshfs_analysis(req: SSHFSMountAnalyzeRequest) -> dict:
         services    = detect_services(fs)     if req.services    else []
         browsers    = detect_browsers(fs)     if req.browsers    else []
         multimedia  = analyze_multimedia(fs)  if req.multimedia  else []
-        tails       = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else []
+        tails_result = analyze_tails(fs, tool_findings=classified) if _is_tails_os(os_info) else {}
+        tails, tails_artifacts = _extract_tails_analysis(tails_result)
         containers  = analyze_containers(fs)
         report = build_report(
             os_info,
@@ -970,6 +1086,7 @@ def _sshfs_analysis(req: SSHFSMountAnalyzeRequest) -> dict:
             browsers=browsers,
             multimedia=multimedia,
             tails=tails,
+            tails_artifacts=tails_artifacts,
             containers=containers,
         )
         out = report.dict()
@@ -1360,6 +1477,13 @@ class CaseAnalyzeRequest(BaseModel):
     image_path: str
 
 
+class CaseAnalyzeTailsDeepRequest(BaseModel):
+    image_path: str
+    collect_dir: Optional[str] = None
+    max_copy_bytes: int = 25 * 1024 * 1024
+    no_collect: bool = False
+
+
 # ── Case management endpoints ─────────────────────────────────────────────────
 
 @app.get("/cases")
@@ -1500,6 +1624,65 @@ def cases_analyze_tails(case_id: str, req: CaseAnalyzeRequest):
             verified_by=actor,
         )
         append_case_audit(case_id, "analysis_module_executed", actor="osforensics", details={"module": "tails_analysis", "source_id": source.get("id")})
+        return {"source": source, "report": report}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/cases/{case_id}/analyze/tails/deep")
+def cases_analyze_tails_deep(case_id: str, req: CaseAnalyzeTailsDeepRequest):
+    """Run deep Tails-focused analysis and save result as a case data source."""
+    try:
+        get_case(case_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        fs = FilesystemAccessor(req.image_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        report = _full_analysis(fs, tails_focus=True)
+        deep_req = TailsDeepScanRequest(
+            image_path=req.image_path,
+            collect_dir=req.collect_dir,
+            max_copy_bytes=req.max_copy_bytes,
+            no_collect=req.no_collect,
+        )
+        deep = _run_tails_deep_scan(deep_req)
+        report.setdefault("tails_artifacts", {})["deep_scan"] = deep
+        for k, v in (deep.get("artifacts") or {}).items():
+            report.setdefault("tails_artifacts", {}).setdefault(k, v)
+
+        hashes = _compute_file_hashes(req.image_path)
+        report = _attach_legal_context(
+            report,
+            evidence_file=req.image_path,
+            extraction_method="filesystem_accessor_tails_deep_analysis",
+            integrity_hashes=hashes,
+        )
+        label_base = os.path.basename(req.image_path.rstrip("/")) or req.image_path
+        label = f"{label_base} (TailsOS Deep)"
+        case_obj = get_case(case_id)
+        actor = case_obj.get("examiner") or "system"
+        source = add_data_source(
+            case_id,
+            req.image_path,
+            label,
+            report,
+            evidence={"acquisition_time": _utc_now(), "hashes": hashes},
+            provenance={
+                "source": req.image_path,
+                "extraction_method": "filesystem_accessor_tails_deep_analysis",
+                "original_path": req.image_path,
+            },
+            actor=actor,
+            verified_by=actor,
+        )
+        append_case_audit(case_id, "analysis_module_executed", actor="osforensics", details={"module": "tails_deep_analysis", "source_id": source.get("id")})
         return {"source": source, "report": report}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})

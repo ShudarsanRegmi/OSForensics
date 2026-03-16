@@ -249,6 +249,7 @@ class ForensicReport(BaseModel):
     browsers: List[BrowserProfile] = []
     multimedia: List[MediaFinding] = []
     tails: List[TailsFinding] = []
+    tails_artifacts: Dict[str, Any] = {}  # Structured artifact data from Tails analysis
     antiforensics: List[AntiForensicsFinding] = []
     containers: Dict[str, Any] = {}
 
@@ -264,6 +265,7 @@ def build_report(
     browsers: Optional[List[Dict]] = None,
     multimedia: Optional[List[Dict]] = None,
     tails: Optional[List[Dict]] = None,
+    tails_artifacts: Optional[Dict[str, Any]] = None,
     antiforensics: Optional[List[Dict]] = None,
     containers: Optional[Dict[str, Any]] = None,
 ) -> ForensicReport:
@@ -371,6 +373,7 @@ def build_report(
         browsers=browser_profiles,
         multimedia=media_findings,
         tails=tails_findings,
+        tails_artifacts=tails_artifacts or {},
         antiforensics=antiforensics_findings,
         containers=container_report,
     )
