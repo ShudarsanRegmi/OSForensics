@@ -4457,6 +4457,7 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
   const isImage = item.media_type === "image";
   const isVideo = item.media_type === "video";
   const fname = item.path.split("/").pop();
+  const [showMeta, setShowMeta] = useState(false);
 
   useEffect(() => {
     const handler = (e) => {
@@ -4489,6 +4490,13 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
             <a className="mv-download-btn" href={viewUrl} download={fname}>
               <Download size={13} /> Download
             </a>
+            <button
+              className="btn-secondary btn-sm"
+              type="button"
+              onClick={() => setShowMeta((v) => !v)}
+            >
+              EXIF / metadata
+            </button>
             <button className="mv-close" onClick={onClose} title="Close (Esc)">
               <X size={16} />
             </button>
@@ -4524,10 +4532,30 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
           </button>
         </div>
 
-        {/* Metadata chips */}
+        {/* Metadata chips + detailed table */}
         {metaChips.length > 0 && (
           <div className="mv-meta-bar">
-            {metaChips.map((c, i) => <span key={i} className="mv-meta-chip">{c}</span>)}
+            {metaChips.map((c, i) => (
+              <span key={i} className="mv-meta-chip">
+                {c}
+              </span>
+            ))}
+          </div>
+        )}
+        {showMeta && (
+          <div style={{ marginTop: 8 }}>
+            <table className="mm-meta-table">
+              <tbody>
+                {Object.entries(meta).map(([k, v]) => (
+                  <tr key={k}>
+                    <td className="mm-meta-key">{k}</td>
+                    <td className="mm-meta-val">
+                      {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -4576,6 +4604,7 @@ function MultimediaTab({ findings = [], imgPath }) {
   const [filterType, setFilterType] = useState("all");
   const [filterSev, setFilterSev] = useState("all");
   const [search, setSearch] = useState("");
+  const [subtab, setSubtab] = useState("gallery"); // "gallery" | "stego" | "bitplanes"
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState(null);
   const [localFindings, setLocalFindings] = useState(findings);
@@ -4603,6 +4632,12 @@ function MultimediaTab({ findings = [], imgPath }) {
   };
   const flagged = (localFindings || []).filter(i => i.severity !== "info").length;
   const withGps = (localFindings || []).filter(i => i.gps?.lat).length;
+
+  const stegoItems = (localFindings || []).filter(i =>
+    (i.flags || []).some(f =>
+      ["high-entropy", "lsb-stego-suspected", "appended-data", "size-anomaly"].includes(f)
+    )
+  );
 
   const handleRescan = async () => {
     if (!imgPath) return;
@@ -4693,97 +4728,214 @@ function MultimediaTab({ findings = [], imgPath }) {
         )}
       </div>
 
-      {/* Filters */}
-      <div className="mm-filters">
-        <div className="mm-filter-group">
-          <span className="mm-filter-label">Type:</span>
-          {["all", "image", "video", "audio"].map((t) => (
-            <button
-              key={t}
-              className={
-                "btn-pill btn-xs" + (filterType === t ? " btn-pill-active" : "")
-              }
-              onClick={() => setFilterType(t)}
-            >
-              {t[0].toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-        <div className="mm-filter-group">
-          <span className="mm-filter-label">Severity:</span>
-          <select
-            className="input"
-            value={filterSev}
-            onChange={(e) => setFilterSev(e.target.value)}
-          >
-            <option value="all">All</option>
-            <option value="critical">Critical</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-            <option value="info">Info</option>
-          </select>
-        </div>
-        <div className="mm-filter-group" style={{ flex: 1 }}>
-          <input
-            className="input"
-            placeholder="Search path or findings…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <div className="mm-filter-group">
+      {/* Subtabs inside multimedia */}
+      <div className="mm-subtabs">
+        {[
+          { id: "gallery", label: "Gallery" },
+          { id: "stego", label: "Stego / LSB" },
+          { id: "bitplanes", label: "Bit-Plane Analysis" },
+        ].map((t) => (
           <button
+            key={t.id}
             className={
-              "btn-icon" + (viewMode === "grid" ? " btn-icon-active" : "")
+              "mm-subtab-btn" + (subtab === t.id ? " mm-subtab-btn-active" : "")
             }
-            onClick={() => setViewMode("grid")}
-            title="Grid view"
+            onClick={() => setSubtab(t.id)}
           >
-            ⬚
+            {t.label}
           </button>
-          <button
-            className={
-              "btn-icon" + (viewMode === "list" ? " btn-icon-active" : "")
-            }
-            onClick={() => setViewMode("list")}
-            title="List view"
-          >
-            ☰
-          </button>
-        </div>
+        ))}
       </div>
 
-      {/* Results */}
-      {!hasItems && (
-        <EmptyState icon={Image} message="No media files match current filters." />
-      )}
-      {hasItems && viewMode === "grid" && (
-        <div className="mm-grid">
-          {items.map((m) => (
-            <MediaCard
-              key={m.path}
-              item={m}
-              imgPath={imgPath}
-              onView={handleView}
+      {/* Gallery subtab: existing filters + cards */}
+      {subtab === "gallery" && (
+        <>
+          <div className="mm-filters">
+            <div className="mm-filter-group">
+              <span className="mm-filter-label">Type:</span>
+              {["all", "image", "video", "audio"].map((t) => (
+                <button
+                  key={t}
+                  className={
+                    "btn-pill btn-xs" +
+                    (filterType === t ? " btn-pill-active" : "")
+                  }
+                  onClick={() => setFilterType(t)}
+                >
+                  {t[0].toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="mm-filter-group">
+              <span className="mm-filter-label">Severity:</span>
+              <select
+                className="input"
+                value={filterSev}
+                onChange={(e) => setFilterSev(e.target.value)}
+              >
+                <option value="all">All</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+                <option value="info">Info</option>
+              </select>
+            </div>
+            <div className="mm-filter-group" style={{ flex: 1 }}>
+              <input
+                className="input"
+                placeholder="Search path or findings…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="mm-filter-group">
+              <button
+                className={
+                  "btn-icon" + (viewMode === "grid" ? " btn-icon-active" : "")
+                }
+                onClick={() => setViewMode("grid")}
+                title="Grid view"
+              >
+                ⬚
+              </button>
+              <button
+                className={
+                  "btn-icon" + (viewMode === "list" ? " btn-icon-active" : "")
+                }
+                onClick={() => setViewMode("list")}
+                title="List view"
+              >
+                ☰
+              </button>
+            </div>
+          </div>
+
+          {!hasItems && (
+            <EmptyState
+              icon={Image}
+              message="No media files match current filters."
             />
-          ))}
+          )}
+          {hasItems && viewMode === "grid" && (
+            <div className="mm-grid">
+              {items.map((m) => (
+                <MediaCard
+                  key={m.path}
+                  item={m}
+                  imgPath={imgPath}
+                  onView={handleView}
+                />
+              ))}
+            </div>
+          )}
+          {hasItems && viewMode === "list" && (
+            <div className="mm-list">
+              {items.map((m) => (
+                <div
+                  key={m.path}
+                  className="mm-list-row"
+                  onClick={() => handleView(m)}
+                >
+                  <span className="mm-list-name">
+                    {m.name || m.path.split("/").pop()}
+                  </span>
+                  <span className="mm-list-path">{m.path}</span>
+                  <span className="mm-list-type">{m.media_type}</span>
+                  <SevBadge sev={m.severity} />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Stego / LSB subtab */}
+      {subtab === "stego" && (
+        <div style={{ marginTop: 8 }}>
+          {stegoItems.length === 0 ? (
+            <EmptyState
+              icon={Image}
+              message="No strong steganography indicators detected in analysed media."
+            />
+          ) : (
+            <table className="mm-meta-table">
+              <thead>
+                <tr>
+                  <th className="mm-meta-key">File</th>
+                  <th className="mm-meta-key">Severity</th>
+                  <th className="mm-meta-key">Flags</th>
+                  <th className="mm-meta-key">Entropy</th>
+                  <th className="mm-meta-key">LSB bits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stegoItems.map((m) => (
+                  <tr key={m.path}>
+                    <td className="mm-meta-val">
+                      <div className="mm-list-name">
+                        {m.name || m.path.split("/").pop()}
+                      </div>
+                      <div className="mm-list-path">{m.path}</div>
+                    </td>
+                    <td className="mm-meta-val">
+                      <SevBadge sev={m.severity} />
+                    </td>
+                    <td className="mm-meta-val">
+                      {(m.flags || []).join(", ") || "—"}
+                    </td>
+                    <td className="mm-meta-val">
+                      entropy={m.metadata?.entropy ?? "?"}
+                    </td>
+                    <td className="mm-meta-val">
+                      lsb_entropy={m.metadata?.lsb_entropy_bits ?? "?"},{" "}
+                      p1={m.metadata?.lsb_p_one ?? "?"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
-      {hasItems && viewMode === "list" && (
-        <div className="mm-list">
-          {items.map((m) => (
-            <div
-              key={m.path}
-              className="mm-list-row"
-              onClick={() => handleView(m)}
-            >
-              <span className="mm-list-name">{m.name || m.path.split("/").pop()}</span>
-              <span className="mm-list-path">{m.path}</span>
-              <span className="mm-list-type">{m.media_type}</span>
-              <SevBadge sev={m.severity} />
-            </div>
-          ))}
+
+      {/* Bit-plane analysis subtab */}
+      {subtab === "bitplanes" && (
+        <div style={{ marginTop: 8 }}>
+          {(!localFindings || localFindings.length === 0) ? (
+            <EmptyState
+              icon={Image}
+              message="No media files available for bit-plane analysis."
+            />
+          ) : (
+            <table className="mm-meta-table">
+              <thead>
+                <tr>
+                  <th className="mm-meta-key">File</th>
+                  <th className="mm-meta-key">LSB entropy</th>
+                  <th className="mm-meta-key">p(1)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {localFindings.map((m) => (
+                  <tr key={m.path}>
+                    <td className="mm-meta-val">
+                      <div className="mm-list-name">
+                        {m.name || m.path.split("/").pop()}
+                      </div>
+                      <div className="mm-list-path">{m.path}</div>
+                    </td>
+                    <td className="mm-meta-val">
+                      {m.metadata?.lsb_entropy_bits ?? "—"}
+                    </td>
+                    <td className="mm-meta-val">
+                      {m.metadata?.lsb_p_one ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 

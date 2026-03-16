@@ -4253,6 +4253,44 @@ body,
 /* ══════════════════════════════════════════════════════════
    MULTIMEDIA TAB
    ══════════════════════════════════════════════════════════ */
+.mm-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-lt);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.mm-subtabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-bottom: 1px solid var(--border-lt);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.mm-subtab-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mm-subtab-btn-active {
+  background: var(--accent-soft);
+  color: var(--accent-dk);
+  border-color: var(--accent);
+}
+
 .mm-filters {
   display: flex;
   align-items: center;
@@ -4263,6 +4301,49 @@ body,
   flex-shrink: 0;
   color: var(--fg-muted);
   font-size: 12px;
+}
+
+.mm-list {
+  margin-top: 8px;
+  border-top: 1px solid var(--border-lt);
+}
+
+.mm-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr) 80px auto;
+  gap: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-lt);
+  align-items: center;
+  cursor: pointer;
+}
+
+.mm-list-row:hover {
+  background: var(--surface-mid);
+}
+
+.mm-list-name {
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.mm-list-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.mm-list-type {
+  text-transform: capitalize;
+  font-size: 11px;
+  color: var(--fg-muted);
 }
 
 .mm-select {
