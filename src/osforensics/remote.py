@@ -80,7 +80,7 @@ class SSHSnapshot:
 
 # ── Internal SSH helpers ──────────────────────────────────────────────────────
 
-def _run_cmd(client, cmd: str, timeout: int = 5) -> str:
+def _run_cmd(client, cmd: str, timeout: int = 30) -> str:
     """Execute *cmd* on an open SSH client and return decoded stdout."""
     try:
         _, stdout, _ = client.exec_command(cmd, timeout=timeout)
@@ -246,9 +246,17 @@ def collect_remote_host_info(
     password: Optional[str] = None,
     key_path: Optional[str] = None,
     key_passphrase: Optional[str] = None,
-    connect_timeout: int = 10,
+    connect_timeout: int = 15,
+    banner_timeout: int = 120,
+    auth_timeout: int = 120,
 ) -> dict:
-    """Quick SSH connect to retrieve live system metadata (no SFTP download)."""
+    """Quick SSH connect to retrieve live system metadata (no SFTP download).
+
+    connect_timeout  – TCP socket connect timeout (seconds).
+    banner_timeout   – How long to wait for the server's SSH banner.  Increase
+                       this when the remote sshd has UseDNS yes and DNS is slow.
+    auth_timeout     – How long to wait for authentication to complete.
+    """
     if paramiko is None:
         raise RemoteSnapshotError("paramiko is required for SSH analysis but is not installed")
     if not host.strip() or not username.strip():
@@ -267,8 +275,8 @@ def collect_remote_host_info(
             timeout=connect_timeout,
             allow_agent=True,
             look_for_keys=True,
-            banner_timeout=connect_timeout,
-            auth_timeout=connect_timeout,
+            banner_timeout=banner_timeout,
+            auth_timeout=auth_timeout,
         )
     except Exception as e:
         raise RemoteSnapshotError(f"SSH connection failed: {e}")
@@ -289,7 +297,9 @@ def collect_remote_snapshot(
     key_passphrase: Optional[str] = None,
     include_paths: Optional[list[str]] = None,
     out_dir: Optional[str] = None,
-    connect_timeout: int = 10,
+    connect_timeout: int = 15,
+    banner_timeout: int = 120,
+    auth_timeout: int = 120,
     max_total_bytes: int = 1_024 * 1024 * 1024,
     max_file_bytes: int = 32 * 1024 * 1024,
     max_files: int = 25_000,
@@ -326,8 +336,8 @@ def collect_remote_snapshot(
             timeout=connect_timeout,
             allow_agent=True,
             look_for_keys=True,
-            banner_timeout=connect_timeout,
-            auth_timeout=connect_timeout,
+            banner_timeout=banner_timeout,
+            auth_timeout=auth_timeout,
         )
     except Exception as e:
         raise RemoteSnapshotError(f"SSH connection failed: {e}")

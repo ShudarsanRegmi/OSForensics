@@ -848,7 +848,12 @@ class SSHAnalyzeRequest(BaseModel):
     include_paths: Optional[list[str]] = None
 
     # Acquisition limits to keep remote collection bounded.
-    connect_timeout: int = 10
+    connect_timeout: int = 15
+    # banner_timeout: how long to wait for the server SSH banner (sshd UseDNS
+    # reverse-DNS can hold this up by 30+ s on some hosts).
+    banner_timeout: int = 120
+    # auth_timeout: how long to wait for the authentication exchange to finish.
+    auth_timeout: int = 120
     max_total_mb: int = 1024
     max_file_mb: int = 32
     max_files: int = 25_000
@@ -873,7 +878,9 @@ class SSHFSMountAnalyzeRequest(BaseModel):
 
     # Remote directory to mount for analysis.
     remote_path: str = "/"
-    connect_timeout: int = 10
+    connect_timeout: int = 15
+    banner_timeout: int = 120
+    auth_timeout: int = 120
 
     # Scan toggles aligned with local live scan.
     timeline:    bool = True
@@ -899,6 +906,8 @@ def _ssh_analysis(req: SSHAnalyzeRequest) -> dict:
             include_paths=req.include_paths,
             out_dir=tmp_dir,
             connect_timeout=max(2, req.connect_timeout),
+            banner_timeout=max(5, req.banner_timeout),
+            auth_timeout=max(5, req.auth_timeout),
             max_total_bytes=max(1, req.max_total_mb) * 1024 * 1024,
             max_file_bytes=max(1, req.max_file_mb) * 1024 * 1024,
             max_files=max(100, req.max_files),
@@ -1018,7 +1027,7 @@ def _sshfs_analysis(req: SSHFSMountAnalyzeRequest) -> dict:
             expanded_key = os.path.expanduser(key_path)
             mount_cmd += ["-o", f"IdentityFile={expanded_key}", "-o", "BatchMode=yes"]
 
-        timeout = max(15, req.connect_timeout + 10)
+        timeout = max(15, req.banner_timeout + req.auth_timeout + req.connect_timeout)
         if using_password:
             # Prefer native sshfs password input to avoid requiring sshpass.
             pwd_cmd = mount_cmd + ["-o", "password_stdin"]
@@ -1107,6 +1116,8 @@ def _sshfs_analysis(req: SSHFSMountAnalyzeRequest) -> dict:
                 key_path=req.key_path,
                 key_passphrase=req.key_passphrase,
                 connect_timeout=max(2, req.connect_timeout),
+                banner_timeout=max(5, req.banner_timeout),
+                auth_timeout=max(5, req.auth_timeout),
             )
             out["live_info"] = info
         except Exception:
@@ -1241,7 +1252,9 @@ class SSHInfoRequest(BaseModel):
     password: Optional[str] = None
     key_path: Optional[str] = None
     key_passphrase: Optional[str] = None
-    connect_timeout: int = 10
+    connect_timeout: int = 15
+    banner_timeout: int = 120
+    auth_timeout: int = 120
 
 
 @app.post("/analyze/ssh/info")
@@ -1261,6 +1274,8 @@ def analyze_ssh_info(req: SSHInfoRequest):
             key_path=req.key_path,
             key_passphrase=req.key_passphrase,
             connect_timeout=max(2, req.connect_timeout),
+            banner_timeout=max(5, req.banner_timeout),
+            auth_timeout=max(5, req.auth_timeout),
         )
         return info
     except RemoteSnapshotError as e:

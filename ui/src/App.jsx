@@ -631,6 +631,8 @@ function RemoteScanDialog({ onClose, onResult, runScan, title = "Remote Connect 
   const [keyPassphrase, setKeyPassphrase] = useState("");
   const [includePaths, setIncludePaths] = useState(REMOTE_DEFAULT_INCLUDE);
   const [types, setTypes] = useState(defaults);
+  const [connectTimeout, setConnectTimeout] = useState(15);
+  const [authTimeout, setAuthTimeout] = useState(120);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(null);
   const [connectedInfo, setConnectedInfo] = useState(null);
@@ -653,7 +655,9 @@ function RemoteScanDialog({ onClose, onResult, runScan, title = "Remote Connect 
           host: host.trim(),
           username: username.trim(),
           port: Number(port) || 22,
-          connect_timeout: 10,
+          connect_timeout: Number(connectTimeout) || 15,
+          banner_timeout: Number(authTimeout) || 120,
+          auth_timeout: Number(authTimeout) || 120,
         };
         if (authMode === "password") {
           authBody.password = password;
@@ -694,7 +698,9 @@ function RemoteScanDialog({ onClose, onResult, runScan, title = "Remote Connect 
         host: host.trim(),
         username: username.trim(),
         port: Number(port) || 22,
-        connect_timeout: 10,
+        connect_timeout: Number(connectTimeout) || 15,
+        banner_timeout: Number(authTimeout) || 120,
+        auth_timeout: Number(authTimeout) || 120,
       };
 
       if (authMode === "password") {
@@ -773,6 +779,17 @@ function RemoteScanDialog({ onClose, onResult, runScan, title = "Remote Connect 
               </div>
             </div>
 
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div className="dlg-field">
+                <label>Connect Timeout (s)</label>
+                <input type="number" min="2" max="300" value={connectTimeout} onChange={(e) => setConnectTimeout(e.target.value)} />
+              </div>
+              <div className="dlg-field">
+                <label>Auth / Banner Timeout (s)</label>
+                <input type="number" min="5" max="600" value={authTimeout} onChange={(e) => setAuthTimeout(e.target.value)} />
+              </div>
+            </div>
+
             <div className="dlg-field">
               <label>Authentication</label>
               <div style={{ display: "flex", gap: 10, fontSize: 12 }}>
@@ -830,6 +847,17 @@ function RemoteScanDialog({ onClose, onResult, runScan, title = "Remote Connect 
               <div className="dlg-field">
                 <label>Port</label>
                 <input type="number" min="1" max="65535" value={port} onChange={(e) => setPort(e.target.value)} />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div className="dlg-field">
+                <label>Connect Timeout (s)</label>
+                <input type="number" min="2" max="300" value={connectTimeout} onChange={(e) => setConnectTimeout(e.target.value)} />
+              </div>
+              <div className="dlg-field">
+                <label>Auth / Banner Timeout (s)</label>
+                <input type="number" min="5" max="600" value={authTimeout} onChange={(e) => setAuthTimeout(e.target.value)} />
               </div>
             </div>
 
