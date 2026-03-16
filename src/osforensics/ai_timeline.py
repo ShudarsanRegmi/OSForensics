@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from .agent_core import get_agent, _gemini_chat, _SYSTEM as AGENT_SYSTEM, _parse_json
+from .agent_core import get_agent, ollama_chat, _SYSTEM as AGENT_SYSTEM, parse_json
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ If no suspicious activity is found, state that the system appears clean but stil
 """
 
 def analyze_timeline_ai(events: List[Dict]) -> Dict:
-    """Send timeline events to Gemini for attack reconstruction and prediction."""
+    """Send timeline events to Ollama for attack reconstruction and prediction."""
     print(f"DEBUG: Starting AI timeline analysis for {len(events)} events")
     agent = get_agent()
     client = agent._get_client()
@@ -68,15 +68,17 @@ def analyze_timeline_ai(events: List[Dict]) -> Dict:
 
     prompt = f"Analyze the following {len(events)} timeline events:\n\n{json.dumps(summarized_events, indent=2)}\n\nProvide the attack sequence, insights, and prediction."
     
-    # We use a history that establishes the role
-    history = [{"role": "user", "parts": [prompt]}]
+    messages = [
+        {"role": "system", "content": TIMELINE_AI_SYSTEM},
+        {"role": "user", "content": prompt}
+    ]
     
     try:
-        print("DEBUG: Sending request to Gemini...")
-        raw_response = _gemini_chat(history, TIMELINE_AI_SYSTEM, client)
-        print(f"DEBUG: Received response from Gemini ({len(raw_response)} chars)")
-        result = _parse_json(raw_response)
-        print("DEBUG: Successfully parsed Gemini response")
+        print("DEBUG: Sending request to Ollama...")
+        raw_response = ollama_chat(messages, agent.model, client, use_json=True)
+        print(f"DEBUG: Received response from Ollama ({len(raw_response)} chars)")
+        result = parse_json(raw_response)
+        print("DEBUG: Successfully parsed Ollama response")
         return result
     except Exception as e:
         print(f"DEBUG: AI analysis failed error: {e}")

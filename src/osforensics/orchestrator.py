@@ -1,4 +1,4 @@
-"""Multi-Agent Orchestration Framework for OS Forensics.
+"""Multi-Agent Orchestration Framework for OS Forensics (Ollama version).
 
 Architecture
 ------------
@@ -17,17 +17,6 @@ Architecture
     SubAgent yields structured findings → Orchestrator
         ↓
     Orchestrator aggregates + synthesises a final forensic answer
-
-Sub-Agents
-----------
-  browser_agent     – Chrome/Firefox history, downloads, cookies, extensions
-  memory_agent      – Volatility3 memory dump analysis
-  persistence_agent – Cron, systemd, shell-startup, SSH keys
-  filesystem_agent  – OS detect, tool detection, deleted files, timeline
-  services_agent    – System service enumeration and anomaly detection
-  config_agent      – SSH, sudo, firewall, PAM security audits
-  multimedia_agent  – Image/video/audio metadata, GPS, steganography
-  tails_agent       – Tails OS & Tor forensics
 """
 from __future__ import annotations
 
@@ -38,28 +27,31 @@ import time
 import traceback
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+import ollama
 
 from . import agent_memory as mem
 
-# ── Gemini config ──────────────────────────────────────────────────────────────
+import requests
 
-GEMINI_API_KEY  = os.environ.get("GEMINI_API_KEY", "")
-DEFAULT_MODEL   = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-exp")
+def _get_default_ollama_url():
+    url = os.environ.get("OLLAMA_URL")
+    if url:
+        return url
+    try:
+        resp = requests.get("http://localhost:11434/api/tags", timeout=0.5)
+        if resp.status_code == 200:
+            return "http://localhost:11434/"
+    except Exception:
+        pass
+    return "http://100.73.207.125:11434/"
+
+# ── Ollama config ──────────────────────────────────────────────────────────────
+
+OLLAMA_URL      = _get_default_ollama_url()
+DEFAULT_MODEL   = os.environ.get("OLLAMA_MODEL", "qwen3.5")
 MAX_OBS_CHARS   = 4_000
-_RETRY_MAX      = int(os.environ.get("GEMINI_RETRY_MAX", "4"))
-_RETRY_BASE_SEC = float(os.environ.get("GEMINI_RETRY_BASE", "5.0"))
-_RETRY_CAP_SEC  = float(os.environ.get("GEMINI_RETRY_CAP", "120.0"))
 
-_SAFETY = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT:        HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH:       HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
-
-# ── Domain tool registries (imported lazily to avoid circular imports) ─────────
+# ── Domain tool registries ─────────────────────────────────────────────────────
 
 def _get_sub_registries() -> Dict[str, Dict]:
     """Return per-domain tool registries, imported lazily."""
@@ -79,7 +71,7 @@ def _get_sub_registries() -> Dict[str, Dict]:
         "tails_agent":       TAILS_TOOLS,
     }
 
-# ── Sub-agent descriptions for the orchestrator prompt ────────────────────────
+# ── Sub-agent descriptions ─────────────────────────────────────────────────────
 
 _SUBAGENT_DESCRIPTIONS = {
     "browser_agent": (
@@ -126,64 +118,27 @@ _SUBAGENT_DESCRIPTIONS = {
 
 # ── Shared LLM helpers ─────────────────────────────────────────────────────────
 
-def _build_model(model_name: str = DEFAULT_MODEL) -> genai.GenerativeModel:
-    if not GEMINI_API_KEY:
-        raise EnvironmentError(
-            "GEMINI_API_KEY not set. Export it before running the agent."
+def _build_client() -> ollama.Client:
+    return ollama.Client(host=OLLAMA_URL)
+
+
+def _ollama_call(messages: List[dict], model: str, client: ollama.Client, use_json: bool = True) -> str:
+    """Send history to Ollama. Returns raw text."""
+    options = {"temperature": 0.1}
+    if use_json:
+        response = client.chat(
+            model=model,
+            messages=messages,
+            format="json",
+            options=options,
         )
-    genai.configure(api_key=GEMINI_API_KEY)
-    return genai.GenerativeModel(
-        model_name=model_name,
-        safety_settings=_SAFETY,
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.1,
-            max_output_tokens=2048,
-        ),
-    )
-
-
-def _is_rate_limit(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return "429" in msg or "quota" in msg or "rate" in msg
-
-
-def _retry_after(exc: Exception) -> Optional[float]:
-    m = re.search(r"retry in\s+([\d.]+)\s*s", str(exc), re.IGNORECASE)
-    return float(m.group(1)) if m else None
-
-
-def _gemini_call(history: List[dict], system: str, model: genai.GenerativeModel) -> str:
-    """Send history to Gemini with retry on rate-limit. Returns raw text."""
-    full_history = [
-        {"role": "user",  "parts": [system]},
-        {"role": "model", "parts": ['{"thought":"Ready","action":"READY"}']},
-    ] + history
-
-    wait = _RETRY_BASE_SEC
-    last_exc: Exception = RuntimeError("no attempts")
-
-    for attempt in range(1, _RETRY_MAX + 1):
-        try:
-            chat = model.start_chat(history=full_history[:-1])
-            return chat.send_message(full_history[-1]["parts"]).text
-        except Exception as exc:
-            last_exc = exc
-            if not _is_rate_limit(exc) or attempt == _RETRY_MAX:
-                raise
-            delay = min((_retry_after(exc) or wait) + 1.0, _RETRY_CAP_SEC)
-            wait  = min(wait * 2, _RETRY_CAP_SEC)
-            time.sleep(delay)
-
-    raise last_exc
-
-
-def _to_gemini(messages: List[dict]) -> List[dict]:
-    role_map = {"assistant": "model", "user": "user"}
-    return [
-        {"role": role_map.get(m["role"], m["role"]), "parts": [m["content"]]}
-        for m in messages
-        if m["role"] not in ("system",)
-    ]
+    else:
+        response = client.chat(
+            model=model,
+            messages=messages,
+            options=options,
+        )
+    return response["message"]["content"]
 
 
 def _sanitize_escapes(text: str) -> str:
@@ -202,64 +157,7 @@ def _parse_json(text: str) -> dict:
             return json.loads(m.group())
         except json.JSONDecodeError:
             pass
-    start = text.find("{")
-    if start != -1:
-        try:
-            healed = _heal_json(text[start:])
-            return json.loads(healed)
-        except json.JSONDecodeError:
-            pass
     raise ValueError(f"No valid JSON in LLM response: {text[:300]!r}")
-
-
-def _heal_json(fragment: str) -> str:
-    in_string = escape = False
-    depth = 0
-    last_complete = 0
-    last_non_ws = ""
-    open_string_is_val = False
-
-    for i, ch in enumerate(fragment):
-        if escape:
-            escape = False
-            continue
-        if ch == "\\" and in_string:
-            escape = True
-            continue
-        if ch == '"':
-            if not in_string:
-                open_string_is_val = (last_non_ws == ":")
-            in_string = not in_string
-            continue
-        if not in_string:
-            if ch == "{":
-                depth += 1
-                last_non_ws = ch
-            elif ch == "}":
-                depth -= 1
-                if depth > 0:
-                    last_complete = i + 1
-                last_non_ws = ch
-            elif ch == ",":
-                if depth == 1:
-                    last_complete = i + 1
-                last_non_ws = ch
-            elif ch == ":":
-                last_non_ws = ch
-            elif not ch.isspace():
-                last_non_ws = ch
-
-    if depth <= 0:
-        return fragment
-    result   = fragment + ('"' if in_string else "")
-    stripped = result.rstrip()
-    last_c   = stripped[-1] if stripped else ""
-    def _close(base: str) -> str:
-        base = base.rstrip().rstrip(",")
-        return (base or "{") + "}" * depth
-    if last_c == ":" or (in_string and not open_string_is_val):
-        return _close(stripped[:last_complete])
-    return _close(stripped)
 
 
 def _truncate(data: Any, max_chars: int = MAX_OBS_CHARS) -> str:
@@ -285,20 +183,22 @@ You are a specialist forensic sub-agent: {role_name}.
 2. Call tools one at a time.
 3. Once you have sufficient evidence, emit ANSWER.
 
-## RESPONSE FORMAT (strict JSON only — no prose outside JSON)
+## RESPONSE FORMAT
+Respond ONLY with a valid JSON object. Do not include any prose outside the JSON.
+All detailed reasoning and reports should be written in Markdown INSIDE the JSON fields.
 
 Tool call:
 {{
-  "thought": "Why I need this data",
+  "thought": "Brief summary of reasoning in Markdown",
   "action":  "tool_name",
   "args":    {{"param": "value"}}
 }}
 
 Final answer:
 {{
-  "thought": "Summary of findings",
+  "thought": "Brief summary of findings",
   "action":  "ANSWER",
-  "answer":  "Detailed findings with specific evidence citations"
+  "answer":  "DETAILED FORENSIC REPORT IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
 }}
 
 ## CONSTRAINTS
@@ -317,12 +217,14 @@ class SubAgent:
         agent_id: str,
         description: str,
         tool_registry: Dict[str, dict],
-        model: genai.GenerativeModel,
+        client: ollama.Client,
+        model: str,
         max_steps: int = 5,
     ):
         self.agent_id    = agent_id
         self.description = description
         self.tools       = tool_registry
+        self.client      = client
         self.model       = model
         self.max_steps   = max_steps
 
@@ -344,12 +246,9 @@ class SubAgent:
 
     def _execute(self, action: str, args: dict) -> dict:
         if action not in self.tools:
-            return {"error": f"Tool '{action}' not in {self.agent_id}'s registry. "
-                             f"Available: {list(self.tools)}"}
+            return {"error": f"Tool '{action}' not in {self.agent_id}'s registry."}
         try:
             return self.tools[action]["fn"](**args)
-        except TypeError as e:
-            return {"error": f"Bad args for '{action}': {e}"}
         except Exception as e:
             return {"error": str(e), "trace": traceback.format_exc()}
 
@@ -359,55 +258,33 @@ class SubAgent:
         session_id: str,
         parent_step: int,
     ) -> Generator[Dict, None, None]:
-        """Execute domain-specific ReAct loop.
-
-        Yields sub-step events and a final ``subagent_result`` event.
-        """
         system   = self._system(task)
-        messages = [{"role": "user", "content": task}]
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": task}
+        ]
         steps_taken = 0
 
         for step in range(1, self.max_steps + 1):
-            # ── LLM call ────────────────────────────────────────────────────
-            wait = _RETRY_BASE_SEC
-            raw  = None
-
-            for attempt in range(1, _RETRY_MAX + 1):
-                try:
-                    gemini_history = _to_gemini(messages)
-                    raw    = _gemini_call(gemini_history, system, self.model)
-                    parsed = _parse_json(raw)
-                    break
-                except Exception as exc:
-                    if _is_rate_limit(exc) and attempt < _RETRY_MAX:
-                        delay = min((_retry_after(exc) or wait) + 1.0, _RETRY_CAP_SEC)
-                        wait  = min(wait * 2, _RETRY_CAP_SEC)
-                        yield {
-                            "type":     "subagent_waiting",
-                            "agent_id": self.agent_id,
-                            "seconds":  delay,
-                            "attempt":  attempt,
-                            "message":  f"[{self.agent_id}] Rate-limit — waiting {delay:.0f}s",
-                        }
-                        time.sleep(delay)
-                    else:
-                        yield {
-                            "type":     "subagent_error",
-                            "agent_id": self.agent_id,
-                            "message":  f"[{self.agent_id}] LLM error at step {step}: {exc}",
-                        }
-                        return
+            try:
+                raw    = _ollama_call(messages, self.model, self.client, use_json=True)
+                parsed = _parse_json(raw)
+            except Exception as exc:
+                yield {
+                    "type":     "subagent_error",
+                    "agent_id": self.agent_id,
+                    "message":  f"[{self.agent_id}] LLM error at step {step}: {exc}",
+                }
+                return
 
             thought = parsed.get("thought", "")
             action  = parsed.get("action",  "").strip()
             args    = parsed.get("args",    {})
 
-            if action == "READY":
-                continue
-
-            # ── Final answer ─────────────────────────────────────────────────
             if action == "ANSWER":
                 answer = parsed.get("answer") or thought
+                if not isinstance(answer, str):
+                    answer = json.dumps(answer, indent=2)
                 mem.add_episode(session_id, parent_step * 100 + step,
                                 thought, "ANSWER", {}, {"answer": answer, "agent": self.agent_id})
                 yield {
@@ -418,15 +295,6 @@ class SubAgent:
                 }
                 return
 
-            if not action:
-                yield {
-                    "type":     "subagent_error",
-                    "agent_id": self.agent_id,
-                    "message":  f"[{self.agent_id}] Step {step}: no action returned.",
-                }
-                return
-
-            # ── Tool call ────────────────────────────────────────────────────
             observation = self._execute(action, args)
             steps_taken += 1
 
@@ -455,19 +323,16 @@ class SubAgent:
                 ),
             })
 
-        # ── Max steps: force answer ───────────────────────────────────────────
         messages.append({
             "role": "user",
-            "content": (
-                "Maximum steps reached. Provide your best forensic findings now.\n"
-                '{"thought":"...","action":"ANSWER","answer":"..."}'
-            ),
+            "content": "Maximum steps reached. Provide your best forensic findings now."
         })
         try:
-            gemini_history = _to_gemini(messages)
-            raw    = _gemini_call(gemini_history, system, self.model)
+            raw    = _ollama_call(messages, self.model, self.client)
             parsed = _parse_json(raw)
             answer = parsed.get("answer") or parsed.get("thought", "No findings.")
+            if not isinstance(answer, str):
+                answer = json.dumps(answer, indent=2)
         except Exception as e:
             answer = f"[{self.agent_id}] Could not generate final answer: {e}"
 
@@ -495,29 +360,28 @@ dispatch_subagent(agent_id, task, path)
     task     : natural-language description of what you need from that agent
     path     : absolute filesystem path or dump file to investigate
 
-## RESPONSE FORMAT (strict JSON only)
+## RESPONSE FORMAT
+Respond ONLY with a valid JSON object. Do not include any prose outside the JSON.
+All detailed reasoning and reports should be written in Markdown INSIDE the JSON fields.
 
 Dispatch a sub-agent:
 {{
-  "thought": "Why I need this domain's analysis",
+  "thought": "Brief summary of reasoning in Markdown",
   "action":  "dispatch_subagent",
   "args":    {{"agent_id": "browser_agent", "task": "...", "path": "..."}}
 }}
 
-Final synthesis (only after collecting evidence from relevant agents):
+Final synthesis:
 {{
-  "thought": "Overall forensic picture",
+  "thought": "Brief summary of findings",
   "action":  "ANSWER",
-  "answer":  "Comprehensive forensic report citing all sub-agent findings"
+  "answer":  "DETAILED FORENSIC REPORT IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
 }}
 
 ## ORCHESTRATION RULES
 - Decompose the user query into domain-specific sub-tasks.
 - Dispatch agents whose domains are relevant to the query.
-- You may dispatch multiple agents sequentially or re-dispatch one with a
-  follow-up task if findings warrant deeper inspection.
 - Synthesise ALL sub-agent answers into a cohesive forensic narrative.
-- Always dispatch at least one sub-agent before answering.
 - Maximum {max_steps} orchestration steps total.
 - Initial investigation path: {initial_path}
 """
@@ -529,22 +393,18 @@ class OrchestratorAgent:
     def __init__(self, model_name: str = DEFAULT_MODEL, max_steps: int = 10):
         self.model_name = model_name
         self.max_steps  = max_steps
-        self._model: Optional[genai.GenerativeModel] = None
+        self._client: Optional[ollama.Client] = None
         self._sub_registries: Optional[Dict[str, Dict]] = None
 
-    # ── Lazy init ──────────────────────────────────────────────────────────────
-
-    def _get_model(self) -> genai.GenerativeModel:
-        if self._model is None:
-            self._model = _build_model(self.model_name)
-        return self._model
+    def _get_client(self) -> ollama.Client:
+        if self._client is None:
+            self._client = _build_client()
+        return self._client
 
     def _get_sub_registries(self) -> Dict[str, Dict]:
         if self._sub_registries is None:
             self._sub_registries = _get_sub_registries()
         return self._sub_registries
-
-    # ── Orchestrator system prompt ─────────────────────────────────────────────
 
     def _build_system(self, initial_path: str) -> str:
         lines = []
@@ -556,8 +416,6 @@ class OrchestratorAgent:
             initial_path=initial_path,
         )
 
-    # ── Sub-agent dispatch ─────────────────────────────────────────────────────
-
     def _dispatch(
         self,
         agent_id: str,
@@ -566,36 +424,23 @@ class OrchestratorAgent:
         session_id: str,
         orch_step: int,
     ) -> Generator[Dict, None, None]:
-        """Create and run the requested sub-agent; yield all its events."""
         registries = self._get_sub_registries()
-
         if agent_id not in registries:
-            yield {
-                "type":    "subagent_error",
-                "agent_id": agent_id,
-                "message": (
-                    f"Unknown sub-agent '{agent_id}'. "
-                    f"Valid agents: {list(registries)}"
-                ),
-            }
+            yield {"type": "subagent_error", "agent_id": agent_id, "message": f"Unknown sub-agent '{agent_id}'."}
             return
 
         description = _SUBAGENT_DESCRIPTIONS.get(agent_id, "Specialist forensic agent")
         sub = SubAgent(
-            agent_id    = agent_id,
+            agent_id = agent_id,
             description = description,
             tool_registry = registries[agent_id],
-            model       = self._get_model(),
-            max_steps   = 5,
+            client = self._get_client(),
+            model = self.model_name,
+            max_steps = 5,
         )
-
-        # Augment task with path context
         full_task = f"{task}\n\nFilesystem/dump path: {path}"
-
         yield {"type": "subagent_start", "agent_id": agent_id, "task": full_task}
         yield from sub.run(full_task, session_id, parent_step=orch_step)
-
-    # ── Main orchestration loop ────────────────────────────────────────────────
 
     def run(
         self,
@@ -603,76 +448,34 @@ class OrchestratorAgent:
         path: str = "/",
         session_id: Optional[str] = None,
     ) -> Generator[Dict, None, None]:
-        """Drive the multi-agent investigation.
-
-        Yields event dicts:
-          {"type": "session",          "session_id": str}
-          {"type": "orchestrator_step","step": int, "thought": str,
-                                       "dispatching": str, "task": str}
-          {"type": "subagent_start",   "agent_id": str, "task": str}
-          {"type": "subagent_step",    "agent_id": str, "step": int,
-                                       "thought": str, "action": str,
-                                       "args": dict, "observation": dict}
-          {"type": "subagent_result",  "agent_id": str, "answer": str}
-          {"type": "subagent_waiting", "agent_id": str, "seconds": float}
-          {"type": "subagent_error",   "agent_id": str, "message": str}
-          {"type": "answer",           "text": str, "session_id": str, "steps": int}
-          {"type": "error",            "message": str}
-        """
         if session_id is None:
             session_id = mem.create_session(query)
         yield {"type": "session", "session_id": session_id}
 
-        try:
-            model = self._get_model()
-        except EnvironmentError as e:
-            yield {"type": "error", "message": str(e)}
-            return
-
+        client   = self._get_client()
         system   = self._build_system(path)
-        messages = [{"role": "user", "content": query}]
-
-        # Accumulated sub-agent answers — injected back so the LLM can synthesise
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": query}
+        ]
         subagent_results: Dict[str, str] = {}
 
         for orch_step in range(1, self.max_steps + 1):
-
-            # ── LLM call ──────────────────────────────────────────────────────
-            wait = _RETRY_BASE_SEC
-            raw  = None
-
-            for attempt in range(1, _RETRY_MAX + 1):
-                try:
-                    gemini_history = _to_gemini(messages)
-                    raw    = _gemini_call(gemini_history, system, model)
-                    parsed = _parse_json(raw)
-                    break
-                except Exception as exc:
-                    if _is_rate_limit(exc) and attempt < _RETRY_MAX:
-                        delay = min((_retry_after(exc) or wait) + 1.0, _RETRY_CAP_SEC)
-                        wait  = min(wait * 2, _RETRY_CAP_SEC)
-                        yield {
-                            "type":    "waiting",
-                            "reason":  "rate_limit",
-                            "seconds": delay,
-                            "attempt": attempt,
-                            "message": f"Orchestrator rate-limited — waiting {delay:.0f}s",
-                        }
-                        time.sleep(delay)
-                    else:
-                        yield {"type": "error", "message": f"Orchestrator LLM error at step {orch_step}: {exc}"}
-                        return
+            try:
+                raw    = _ollama_call(messages, self.model_name, client, use_json=True)
+                parsed = _parse_json(raw)
+            except Exception as exc:
+                yield {"type": "error", "message": f"Orchestrator LLM error at step {orch_step}: {exc}"}
+                return
 
             thought = parsed.get("thought", "")
             action  = parsed.get("action",  "").strip()
             args    = parsed.get("args",    {})
 
-            if action == "READY":
-                continue
-
-            # ── Final answer ───────────────────────────────────────────────────
             if action == "ANSWER":
                 answer = parsed.get("answer") or thought
+                if not isinstance(answer, str):
+                    answer = json.dumps(answer, indent=2)
                 mem.add_episode(session_id, orch_step, thought, "ANSWER", {}, {"answer": answer})
                 yield {
                     "type":       "answer",
@@ -683,7 +486,6 @@ class OrchestratorAgent:
                 }
                 return
 
-            # ── Sub-agent dispatch ─────────────────────────────────────────────
             if action == "dispatch_subagent":
                 agent_id   = args.get("agent_id", "")
                 sub_task   = args.get("task", query)
@@ -697,53 +499,32 @@ class OrchestratorAgent:
                     "task":       sub_task,
                     "path":       sub_path,
                 }
-
-                mem.add_episode(session_id, orch_step, thought, "dispatch_subagent",
-                                args, {"status": "dispatched"})
+                mem.add_episode(session_id, orch_step, thought, "dispatch_subagent", args, {"status": "dispatched"})
 
                 sub_answer = "(no answer)"
-                for event in self._dispatch(agent_id, sub_task, sub_path,
-                                            session_id, orch_step):
+                for event in self._dispatch(agent_id, sub_task, sub_path, session_id, orch_step):
                     yield event
                     if event.get("type") == "subagent_result":
                         sub_answer = event.get("answer", "(no answer)")
 
                 subagent_results[agent_id] = sub_answer
-
-                # Feed sub-agent result back to orchestrator context
                 messages.append({"role": "assistant", "content": raw})
                 messages.append({
                     "role": "user",
-                    "content": (
-                        f"Sub-agent '{agent_id}' completed.\n\n"
-                        f"FINDINGS:\n{_truncate(sub_answer)}\n\n"
-                        "Decide: dispatch another sub-agent for deeper coverage, "
-                        "or synthesise all findings into a final ANSWER."
-                    ),
+                    "content": f"Sub-agent '{agent_id}' completed.\n\nFINDINGS:\n{_truncate(sub_answer)}\n\nDecide: dispatch another sub-agent or synthesise ANSWER."
                 })
                 continue
 
-            # ── Unknown action ─────────────────────────────────────────────────
-            yield {
-                "type":    "error",
-                "message": f"Orchestrator step {orch_step}: unknown action '{action}'.",
-            }
+            yield {"type": "error", "message": f"Orchestrator unknown action '{action}'."}
             return
 
-        # ── Max steps: force synthesis ─────────────────────────────────────────
-        messages.append({
-            "role": "user",
-            "content": (
-                "Maximum orchestration steps reached. "
-                "Synthesise all sub-agent findings into a final forensic report.\n"
-                '{"thought":"...","action":"ANSWER","answer":"..."}'
-            ),
-        })
+        messages.append({"role": "user", "content": "Maximum orchestration steps reached. Synthesise final report."})
         try:
-            gemini_history = _to_gemini(messages)
-            raw    = _gemini_call(gemini_history, system, model)
+            raw    = _ollama_call(messages, self.model_name, client, use_json=True)
             parsed = _parse_json(raw)
             answer = parsed.get("answer") or parsed.get("thought", "Investigation complete.")
+            if not isinstance(answer, str):
+                answer = json.dumps(answer, indent=2)
         except Exception as e:
             answer = f"Could not generate final answer: {e}"
 
