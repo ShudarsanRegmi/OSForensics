@@ -122,7 +122,7 @@ Use the following Markdown structure strictly:
 
     try:
         # Using the agent's chat method to get a response
-        response = agent.chat(prompt)
+        response = agent.chat(prompt, use_json=False)
         return response
     except Exception as e:
         return f"AI Analysis failed: {str(e)}"
@@ -202,6 +202,6 @@ Use the following Markdown structure strictly:
 """
 
     try:
-        return agent.chat(prompt)
+        return agent.chat(prompt, use_json=False)
     except Exception as e:
         return f"Dump AI Analysis failed: {str(e)}"

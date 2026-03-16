@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Search, FolderSearch, Trash2, Settings, Microscope,
   X, FolderOpen, AlertTriangle, CheckCircle, HardDrive, Activity,
@@ -4387,6 +4389,278 @@ function BrowserTab({ browsers = [] }) {
 // MULTIMEDIA TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ─── Bit-Plane / Visual Forensics Analyser ────────────────────────────────────
+function BitPlaneAnalyzer({ findings = [], imgPath }) {
+  const [selectedPath, setSelectedPath] = useState(null);
+  const [channel, setChannel]           = useState("gray"); // "gray"|"r"|"g"|"b"
+  const [loadStatus, setLoadStatus]     = useState("idle"); // "idle"|"loading"|"ready"|"error"
+  const [loadErr, setLoadErr]           = useState(null);
+  const [pixelCache, setPixelCache]     = useState(null);   // { data, w, h }
+  const [renderedPlanes, setRenderedPlanes]   = useState([]); // [{bit, dataUrl, label}]
+  const [channelCanvases, setChannelCanvases] = useState([]); // [{label, dataUrl}]
+  const [imgDims, setImgDims]           = useState(null);
+  const [zoomPlane, setZoomPlane]       = useState(null);   // bit number being zoomed
+
+  const imageItems = (findings || []).filter(f => f.media_type === "image");
+
+  // Auto-select first image when findings arrive
+  useEffect(() => {
+    if (imageItems.length > 0 && !selectedPath) {
+      setSelectedPath(imageItems[0].path);
+    }
+  }, [findings]); // eslint-disable-line
+
+  // Load image → cache raw pixels
+  useEffect(() => {
+    if (!selectedPath || !imgPath) return;
+    setLoadStatus("loading");
+    setLoadErr(null);
+    setPixelCache(null);
+    setRenderedPlanes([]);
+    setChannelCanvases([]);
+    setZoomPlane(null);
+
+    const url = apiMediaUrl(imgPath, selectedPath);
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        setImgDims({ w, h });
+
+        const src = document.createElement("canvas");
+        src.width = w; src.height = h;
+        const ctx = src.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        // Copy pixel data out of the canvas before it goes out of scope
+        const id = ctx.getImageData(0, 0, w, h);
+        // Store as plain Uint8Array so React state serialisation is clean
+        setPixelCache({ data: new Uint8Array(id.data.buffer), w, h });
+        setLoadStatus("ready");
+      } catch (e) {
+        setLoadErr(`Canvas read failed: ${e.message}. The image may be blocked by CORS.`);
+        setLoadStatus("error");
+      }
+    };
+    img.onerror = () => {
+      setLoadErr("Image failed to load – check the backend is running.");
+      setLoadStatus("error");
+    };
+    img.src = url;
+  }, [selectedPath, imgPath]);
+
+  // Re-render bit-planes + channel separation whenever cache or channel changes
+  useEffect(() => {
+    if (!pixelCache) return;
+    const { data: px, w, h } = pixelCache;
+
+    // Helper: sample the chosen channel for pixel index i
+    const sample = (i) => {
+      const ri = i * 4;
+      if (channel === "r") return px[ri];
+      if (channel === "g") return px[ri + 1];
+      if (channel === "b") return px[ri + 2];
+      // gray = rec-601 luminance
+      return Math.round(0.299 * px[ri] + 0.587 * px[ri + 1] + 0.114 * px[ri + 2]);
+    };
+
+    // Draw a single canvas from a per-pixel callback, return dataURL
+    const makeCanvas = (perPixelRGBA) => {
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const ctx = c.getContext("2d");
+      const id  = ctx.createImageData(w, h);
+      const d   = id.data;
+      for (let i = 0; i < w * h; i++) {
+        const ri = i * 4;
+        perPixelRGBA(i, ri, d);
+        d[ri + 3] = 255;
+      }
+      ctx.putImageData(id, 0, 0);
+      return c.toDataURL();
+    };
+
+    // 8 bit planes: bit 7 (MSB) → bit 0 (LSB)
+    const planes = [];
+    for (let bit = 7; bit >= 0; bit--) {
+      const dataUrl = makeCanvas((i, ri, d) => {
+        const v = ((sample(i) >> bit) & 1) ? 255 : 0;
+        d[ri] = v; d[ri + 1] = v; d[ri + 2] = v;
+      });
+      planes.push({
+        bit,
+        dataUrl,
+        label: bit === 7 ? "Bit 7 — MSB" : bit === 0 ? "Bit 0 — LSB" : `Bit ${bit}`,
+      });
+    }
+    setRenderedPlanes(planes);
+
+    // Channel separation strip (always shows all 4 regardless of selector)
+    const chDefs = [
+      { key: "lum",  label: "Luminance" },
+      { key: "r",    label: "Red"       },
+      { key: "g",    label: "Green"     },
+      { key: "b",    label: "Blue"      },
+    ];
+    const chCanvases = chDefs.map(({ key, label }) => {
+      const dataUrl = makeCanvas((i, ri, d) => {
+        if (key === "lum") {
+          const v = Math.round(0.299 * px[ri] + 0.587 * px[ri+1] + 0.114 * px[ri+2]);
+          d[ri] = v; d[ri+1] = v; d[ri+2] = v;
+        } else if (key === "r") {
+          d[ri] = px[ri]; d[ri+1] = 0; d[ri+2] = 0;
+        } else if (key === "g") {
+          d[ri] = 0; d[ri+1] = px[ri+1]; d[ri+2] = 0;
+        } else {
+          d[ri] = 0; d[ri+1] = 0; d[ri+2] = px[ri+2];
+        }
+      });
+      return { label, dataUrl };
+    });
+    setChannelCanvases(chCanvases);
+  }, [pixelCache, channel]);
+
+  if (!imageItems.length) {
+    return (
+      <EmptyState
+        icon={Image}
+        message="No image files available. Run a multimedia scan to populate image files."
+      />
+    );
+  }
+
+  const CHANNEL_OPTS = [
+    { id: "gray", label: "Grayscale" },
+    { id: "r",    label: "Red"       },
+    { id: "g",    label: "Green"     },
+    { id: "b",    label: "Blue"      },
+  ];
+
+  return (
+    <div className="bp-container">
+      {/* ── Toolbar ─────────────────────────────────────────── */}
+      <div className="bp-toolbar">
+        <label className="bp-label">Image</label>
+        <select
+          className="input bp-select"
+          value={selectedPath || ""}
+          onChange={e => setSelectedPath(e.target.value)}
+        >
+          {imageItems.map(f => (
+            <option key={f.path} value={f.path}>
+              {f.name || f.path.split("/").pop()}
+            </option>
+          ))}
+        </select>
+
+        <span className="bp-divider" />
+
+        <label className="bp-label">Channel</label>
+        <div className="bp-channel-btns">
+          {CHANNEL_OPTS.map(o => (
+            <button
+              key={o.id}
+              className={"btn-pill btn-xs" + (channel === o.id ? " btn-pill-active" : "")}
+              onClick={() => setChannel(o.id)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        {imgDims && (
+          <span className="bp-dims">
+            {imgDims.w} × {imgDims.h} px
+          </span>
+        )}
+      </div>
+
+      {/* ── States ──────────────────────────────────────────── */}
+      {loadStatus === "loading" && (
+        <div className="bp-loading">
+          <Loader2 size={18} className="spin" style={{ marginRight: 8 }} />
+          Loading image pixels…
+        </div>
+      )}
+      {loadStatus === "error" && (
+        <div className="dlg-error" style={{ margin: "12px 0" }}>{loadErr}</div>
+      )}
+
+      {/* ── Content ─────────────────────────────────────────── */}
+      {loadStatus === "ready" && (
+        <>
+          {/* Channel Separation */}
+          <div className="bp-section-hdr">
+            <Layers size={13} /> Channel Separation
+          </div>
+          <div className="bp-ch-row">
+            {channelCanvases.map(c => (
+              <div key={c.label} className="bp-ch-card">
+                <img src={c.dataUrl} alt={c.label} className="bp-ch-img" />
+                <div className="bp-ch-label">{c.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bit-Plane Grid */}
+          <div className="bp-section-hdr" style={{ marginTop: 20 }}>
+            <Eye size={13} />
+            Bit-Plane Dissection — {CHANNEL_OPTS.find(o => o.id === channel)?.label} channel
+            <span className="bp-hint">Bit 7 = MSB &nbsp;·&nbsp; Bit 0 = LSB (primary steganography plane)</span>
+          </div>
+          <div className="bp-planes-grid">
+            {renderedPlanes.map(p => (
+              <div
+                key={p.bit}
+                className={"bp-plane-card" + (p.bit === 0 ? " bp-lsb-card" : p.bit === 7 ? " bp-msb-card" : "")}
+                onClick={() => setZoomPlane(p.bit === zoomPlane ? null : p.bit)}
+                title="Click to zoom"
+              >
+                <img
+                  src={p.dataUrl}
+                  alt={p.label}
+                  className={"bp-plane-img" + (zoomPlane === p.bit ? " bp-plane-zoomed" : "")}
+                />
+                <div className="bp-plane-label">
+                  {p.label}
+                  {p.bit === 0 && <span className="bp-badge bp-badge-lsb">LSB</span>}
+                  {p.bit === 7 && <span className="bp-badge bp-badge-msb">MSB</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="bp-info-note">
+            <Info size={11} />
+            In steganography detection the <strong>LSB (Bit 0)</strong> plane is studied first — hidden data
+            injected into the least-significant bits produces a random, noisy pattern rather than the
+            smooth gradients seen in natural images. Compare the LSB plane with Bit 1 and Bit 2 for
+            anomalous uniformity or structure.
+          </p>
+        </>
+      )}
+
+      {/* Zoom overlay */}
+      {zoomPlane !== null && renderedPlanes.length > 0 && (
+        <div className="bp-zoom-overlay" onClick={() => setZoomPlane(null)}>
+          <div className="bp-zoom-modal" onClick={e => e.stopPropagation()}>
+            <div className="bp-zoom-hdr">
+              <span>{renderedPlanes.find(p => p.bit === zoomPlane)?.label}</span>
+              <button className="mv-close" onClick={() => setZoomPlane(null)}><X size={16} /></button>
+            </div>
+            <img
+              src={renderedPlanes.find(p => p.bit === zoomPlane)?.dataUrl}
+              alt={`bit ${zoomPlane}`}
+              className="bp-zoom-img"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MM_TYPE_META = {
   image: { Icon: Image, label: "Image", color: "#7c3aed" },
   video: { Icon: Film, label: "Video", color: "#2563eb" },
@@ -4460,6 +4734,7 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
   const isImage = item.media_type === "image";
   const isVideo = item.media_type === "video";
   const fname = item.path.split("/").pop();
+  const [showMeta, setShowMeta] = useState(false);
 
   useEffect(() => {
     const handler = (e) => {
@@ -4492,6 +4767,13 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
             <a className="mv-download-btn" href={viewUrl} download={fname}>
               <Download size={13} /> Download
             </a>
+            <button
+              className="btn-secondary btn-sm"
+              type="button"
+              onClick={() => setShowMeta((v) => !v)}
+            >
+              EXIF / metadata
+            </button>
             <button className="mv-close" onClick={onClose} title="Close (Esc)">
               <X size={16} />
             </button>
@@ -4527,10 +4809,30 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
           </button>
         </div>
 
-        {/* Metadata chips */}
+        {/* Metadata chips + detailed table */}
         {metaChips.length > 0 && (
           <div className="mv-meta-bar">
-            {metaChips.map((c, i) => <span key={i} className="mv-meta-chip">{c}</span>)}
+            {metaChips.map((c, i) => (
+              <span key={i} className="mv-meta-chip">
+                {c}
+              </span>
+            ))}
+          </div>
+        )}
+        {showMeta && (
+          <div style={{ marginTop: 8 }}>
+            <table className="mm-meta-table">
+              <tbody>
+                {Object.entries(meta).map(([k, v]) => (
+                  <tr key={k}>
+                    <td className="mm-meta-key">{k}</td>
+                    <td className="mm-meta-val">
+                      {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -4579,6 +4881,7 @@ function MultimediaTab({ findings = [], imgPath }) {
   const [filterType, setFilterType] = useState("all");
   const [filterSev, setFilterSev] = useState("all");
   const [search, setSearch] = useState("");
+  const [subtab, setSubtab] = useState("gallery"); // "gallery" | "stego" | "bitplanes"
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState(null);
   const [localFindings, setLocalFindings] = useState(findings);
@@ -4606,6 +4909,12 @@ function MultimediaTab({ findings = [], imgPath }) {
   };
   const flagged = (localFindings || []).filter(i => i.severity !== "info").length;
   const withGps = (localFindings || []).filter(i => i.gps?.lat).length;
+
+  const stegoItems = (localFindings || []).filter(i =>
+    (i.flags || []).some(f =>
+      ["high-entropy", "lsb-stego-suspected", "appended-data", "size-anomaly"].includes(f)
+    )
+  );
 
   const handleRescan = async () => {
     if (!imgPath) return;
@@ -4635,6 +4944,256 @@ function MultimediaTab({ findings = [], imgPath }) {
       </div>
     );
   }
+  const hasItems = items.length > 0;
+  const currentIndex = viewItem
+    ? items.findIndex((i) => i.path === viewItem.path)
+    : -1;
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < items.length - 1;
+
+  const handleView = (item) => setViewItem(item);
+  const handlePrev = () => {
+    if (!hasPrev) return;
+    setViewItem(items[currentIndex - 1]);
+  };
+  const handleNext = () => {
+    if (!hasNext) return;
+    setViewItem(items[currentIndex + 1]);
+  };
+
+  return (
+    <div className="tab-content">
+      {/* Summary bar */}
+      <div className="mm-summary-bar">
+        <span className="del-sum-chip neutral">
+          <Image size={11} /> {localFindings.length} media files
+        </span>
+        {counts.image > 0 && (
+          <span className="del-sum-chip">
+            Images: {counts.image}
+          </span>
+        )}
+        {counts.video > 0 && (
+          <span className="del-sum-chip">
+            Videos: {counts.video}
+          </span>
+        )}
+        {counts.audio > 0 && (
+          <span className="del-sum-chip">
+            Audio: {counts.audio}
+          </span>
+        )}
+        {flagged > 0 && (
+          <span className="del-sum-chip red">
+            <AlertTriangle size={11} /> {flagged} flagged
+          </span>
+        )}
+        {withGps > 0 && (
+          <span className="del-sum-chip">
+            <MapPin size={11} /> {withGps} with GPS
+          </span>
+        )}
+        {imgPath && (
+          <button
+            className="btn-secondary btn-xs"
+            onClick={handleRescan}
+            disabled={running}
+            style={{ marginLeft: "auto" }}
+          >
+            {running ? "Scanning…" : "Rescan"}
+          </button>
+        )}
+      </div>
+
+      {/* Subtabs inside multimedia */}
+      <div className="mm-subtabs">
+        {[
+          { id: "gallery", label: "Gallery" },
+          { id: "stego", label: "Stego / LSB" },
+          { id: "bitplanes", label: "Visual Forensics" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            className={
+              "mm-subtab-btn" + (subtab === t.id ? " mm-subtab-btn-active" : "")
+            }
+            onClick={() => setSubtab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Gallery subtab: existing filters + cards */}
+      {subtab === "gallery" && (
+        <>
+          <div className="mm-filters">
+            <div className="mm-filter-group">
+              <span className="mm-filter-label">Type:</span>
+              {["all", "image", "video", "audio"].map((t) => (
+                <button
+                  key={t}
+                  className={
+                    "btn-pill btn-xs" +
+                    (filterType === t ? " btn-pill-active" : "")
+                  }
+                  onClick={() => setFilterType(t)}
+                >
+                  {t[0].toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+            <div className="mm-filter-group">
+              <span className="mm-filter-label">Severity:</span>
+              <select
+                className="input"
+                value={filterSev}
+                onChange={(e) => setFilterSev(e.target.value)}
+              >
+                <option value="all">All</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+                <option value="info">Info</option>
+              </select>
+            </div>
+            <div className="mm-filter-group" style={{ flex: 1 }}>
+              <input
+                className="input"
+                placeholder="Search path or findings…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="mm-filter-group">
+              <button
+                className={
+                  "btn-icon" + (viewMode === "grid" ? " btn-icon-active" : "")
+                }
+                onClick={() => setViewMode("grid")}
+                title="Grid view"
+              >
+                ⬚
+              </button>
+              <button
+                className={
+                  "btn-icon" + (viewMode === "list" ? " btn-icon-active" : "")
+                }
+                onClick={() => setViewMode("list")}
+                title="List view"
+              >
+                ☰
+              </button>
+            </div>
+          </div>
+
+          {!hasItems && (
+            <EmptyState
+              icon={Image}
+              message="No media files match current filters."
+            />
+          )}
+          {hasItems && viewMode === "grid" && (
+            <div className="mm-grid">
+              {items.map((m) => (
+                <MediaCard
+                  key={m.path}
+                  item={m}
+                  imgPath={imgPath}
+                  onView={handleView}
+                />
+              ))}
+            </div>
+          )}
+          {hasItems && viewMode === "list" && (
+            <div className="mm-list">
+              {items.map((m) => (
+                <div
+                  key={m.path}
+                  className="mm-list-row"
+                  onClick={() => handleView(m)}
+                >
+                  <span className="mm-list-name">
+                    {m.name || m.path.split("/").pop()}
+                  </span>
+                  <span className="mm-list-path">{m.path}</span>
+                  <span className="mm-list-type">{m.media_type}</span>
+                  <SevBadge sev={m.severity} />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Stego / LSB subtab */}
+      {subtab === "stego" && (
+        <div style={{ marginTop: 8 }}>
+          {stegoItems.length === 0 ? (
+            <EmptyState
+              icon={Image}
+              message="No strong steganography indicators detected in analysed media."
+            />
+          ) : (
+            <table className="mm-meta-table">
+              <thead>
+                <tr>
+                  <th className="mm-meta-key">File</th>
+                  <th className="mm-meta-key">Severity</th>
+                  <th className="mm-meta-key">Flags</th>
+                  <th className="mm-meta-key">Entropy</th>
+                  <th className="mm-meta-key">LSB bits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stegoItems.map((m) => (
+                  <tr key={m.path}>
+                    <td className="mm-meta-val">
+                      <div className="mm-list-name">
+                        {m.name || m.path.split("/").pop()}
+                      </div>
+                      <div className="mm-list-path">{m.path}</div>
+                    </td>
+                    <td className="mm-meta-val">
+                      <SevBadge sev={m.severity} />
+                    </td>
+                    <td className="mm-meta-val">
+                      {(m.flags || []).join(", ") || "—"}
+                    </td>
+                    <td className="mm-meta-val">
+                      entropy={m.metadata?.entropy ?? "?"}
+                    </td>
+                    <td className="mm-meta-val">
+                      lsb_entropy={m.metadata?.lsb_entropy_bits ?? "?"},{" "}
+                      p1={m.metadata?.lsb_p_one ?? "?"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* Bit-plane / visual forensics subtab */}
+      {subtab === "bitplanes" && (
+        <BitPlaneAnalyzer findings={localFindings} imgPath={imgPath} />
+      )}
+
+      {viewItem && (
+        <MediaViewerModal
+          item={viewItem}
+          imgPath={imgPath}
+          onClose={() => setViewItem(null)}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+        />
+      )}
+    </div>
+  );
 }
 // ─── Tools Tab ────────────────────────────────────────────────────────────────
 
@@ -6131,7 +6690,6 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExportJson, onExpor
           <button className="btn-secondary btn-sm" onClick={onReanalyze} disabled={reanalyzing} title="Re-run analysis on the same image">
             <RefreshCw size={12} className={reanalyzing ? "spin" : ""} /> {reanalyzing ? "Analyzing…" : "Reanalyze"}
           </button>
-          <button className="btn-secondary btn-sm" onClick={onExportJson} title="Download raw forensic report as JSON"><FolderOpen size={12} /> JSON</button>
           <button className="btn-secondary btn-sm" onClick={onExportHtml} title="Generate a structured HTML forensic dossier"><FileText size={12} /> HTML</button>
           <button className="btn-secondary btn-sm" onClick={onExportPdf} title="Export comprehensive report as PDF"><Download size={12} /> PDF</button>
           <button className="btn-secondary btn-sm" onClick={onExportExecutivePdf} title="Export a concise executive summary PDF"><Download size={12} /> Exec PDF</button>
@@ -6942,7 +7500,7 @@ function AgentMessage({ msg }) {
             <Loader2 size={12} className="spin" /> Analysing evidence…
           </span>
         ) : (
-          <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
+          <SimpleMarkdown text={msg.text} />
         )}
       </div>
     </div>
@@ -6957,14 +7515,26 @@ const AGENT_EXAMPLES = [
 ];
 
 function AgentPanel() {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => {
+    try { const saved = localStorage.getItem("osf_agent_messages"); return saved ? JSON.parse(saved) : []; }
+    catch { return []; }
+  });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sessionId, setSessionId] = useState(null);
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem("osf_agent_session") || null);
   const [ollamaStatus, setOllamaStatus] = useState(null);
-  const [model, setModel] = useState("qwen2.5:7b");
+  const [model, setModel] = useState("qwen3.5");
   const bottomRef = useRef(null);
   const abortRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem("osf_agent_messages", JSON.stringify(messages));
+  }, [messages]);
+
+  useEffect(() => {
+    if (sessionId) localStorage.setItem("osf_agent_session", sessionId);
+    else localStorage.removeItem("osf_agent_session");
+  }, [sessionId]);
 
   useEffect(() => {
     apiAgentStatus()
@@ -7086,6 +7656,8 @@ function AgentPanel() {
     if (sessionId) apiAgentReset(sessionId).catch(() => { });
     setMessages([]);
     setSessionId(null);
+    localStorage.removeItem("osf_agent_messages");
+    localStorage.removeItem("osf_agent_session");
   }
 
   return (
@@ -7111,20 +7683,6 @@ function AgentPanel() {
           )}
         </div>
       </div>
-
-      {/* Ollama setup notice */}
-      {ollamaStatus && !ollamaStatus.available && (
-        <div className="ag-notice">
-          <div className="ag-notice-title">
-            <AlertTriangle size={13} /> {ollamaStatus.message}
-          </div>
-          <div className="ag-notice-steps">
-            <code>curl -fsSL https://ollama.ai/install.sh | sh</code>
-            <code>ollama serve</code>
-            <code>ollama pull qwen2.5:7b</code>
-          </div>
-        </div>
-      )}
 
       {/* message thread */}
       <div className="ag-messages">
@@ -7172,34 +7730,14 @@ function AgentPanel() {
 
 const SimpleMarkdown = ({ text }) => {
   if (!text) return null;
-  
-  const lines = text.split("\n");
-  const rendered = lines.map((line, i) => {
-    // Headers
-    if (line.startsWith("### ")) return <h3 key={i}>{line.replace("### ", "")}</h3>;
-    if (line.startsWith("## ")) return <h2 key={i}>{line.replace("## ", "")}</h2>;
-    if (line.startsWith("# ")) return <h1 key={i}>{line.replace("# ", "")}</h1>;
-    
-    // Lists
-    if (line.trim().startsWith("- ")) {
-      return <li key={i} className="ai-list-item">{line.trim().replace("- ", "")}</li>;
-    }
-    
-    // Bold & Code (Very simple inline replacement)
-    let content = line;
-    // Replace **bold** with <strong>
-    content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Replace `code` with <code>
-    content = content.replace(/`(.*?)`/g, '<code>$1</code>');
-    
-    if (line.trim() === "") return <br key={i} />;
-    
-    return <p key={i} dangerouslySetInnerHTML={{ __html: content }} />;
-  });
-
-  return <div className="markdown-report">{rendered}</div>;
+  return (
+    <div className="markdown-report">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 };
-
 function MemoryAnalyser() {
   const [data, setData] = useState(null);
   const [aiInsight, setAiInsight] = useState(null);
@@ -7962,7 +8500,9 @@ export default function App() {
         <div className="main-content">
           {view === "home" && <WorkspaceHome onAction={handleAction} />}
 
-          {view === "agent" && <AgentPanel />}
+          <div style={{ display: view === "agent" ? "flex" : "none", height: "100%", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <AgentPanel />
+          </div>
 
           {view === "cases" && (
             <CasesView

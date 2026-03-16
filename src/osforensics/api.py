@@ -132,10 +132,19 @@ def favicon():
 # Allow the UI dev server to call this API during development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 
@@ -821,7 +830,10 @@ class LiveScanRequest(BaseModel):
     config:      bool = True
     services:    bool = True
     browsers:    bool = True
-    multimedia:  bool = False
+    # Enable multimedia analysis by default so the Multimedia tab
+    # is populated on a standard live scan without requiring a
+    # separate rescan from the UI.
+    multimedia:  bool = True
 
 
 class SSHAnalyzeRequest(BaseModel):
@@ -848,7 +860,7 @@ class SSHAnalyzeRequest(BaseModel):
     config:      bool = True
     services:    bool = True
     browsers:    bool = True
-    multimedia:  bool = False
+    multimedia:  bool = True
 
 
 class SSHFSMountAnalyzeRequest(BaseModel):
@@ -870,7 +882,7 @@ class SSHFSMountAnalyzeRequest(BaseModel):
     config:      bool = True
     services:    bool = True
     browsers:    bool = True
-    multimedia:  bool = False
+    multimedia:  bool = True
 
 
 def _ssh_analysis(req: SSHAnalyzeRequest) -> dict:
