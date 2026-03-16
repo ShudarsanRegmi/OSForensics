@@ -430,6 +430,79 @@ html, body, #root {
   border-radius: 3px;
   word-break: break-all;
 }
+
+/* ── Tools categorization ─────────────────────────────────────────────────── */
+.tools-category {
+  margin-bottom: 24px;
+}
+.category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  margin-bottom: -1px;
+  position: relative;
+}
+.category-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.category-count {
+  color: var(--fg-muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+.evidence-cell {
+  max-width: 300px;
+}
+.view-more-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 0;
+  text-decoration: underline;
+}
+.view-more-btn:hover {
+  color: var(--accent-dk);
+}
+.no-evidence {
+  color: var(--fg-muted);
+  font-style: italic;
+  font-size: 12px;
+}
+
+/* ── Evidence modal ───────────────────────────────────────────────────────── */
+.evidence-modal h4 {
+  margin-bottom: 12px;
+  color: var(--fg);
+}
+.evidence-full-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.evidence-full-list li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-lt);
+}
+.evidence-full-list li:last-child {
+  border-bottom: none;
+}
+.evidence-full-list li code {
+  font-size: 12px;
+  background: #f0f2f7;
+  padding: 2px 6px;
+  border-radius: 3px;
+  word-break: break-all;
+  display: block;
+}
+
 .rp-summary {
   display: flex;
   gap: 24px;

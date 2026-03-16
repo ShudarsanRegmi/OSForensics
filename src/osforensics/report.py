@@ -11,6 +11,7 @@ from pydantic import BaseModel
 class ToolFinding(BaseModel):
     tool: str
     risk: str
+    category: str
     evidence: List[str]
 
 
@@ -234,7 +235,7 @@ def build_report(
     )
 
     tool_findings = [
-        ToolFinding(tool=f["tool"], risk=f.get("risk", "unknown"), evidence=f.get("evidence", []))
+        ToolFinding(tool=f["tool"], risk=f.get("risk", "unknown"), category=f.get("category", "other"), evidence=f.get("evidence", []))
         for f in classified_findings
     ]
 
