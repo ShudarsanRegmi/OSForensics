@@ -63,6 +63,7 @@ from .multimedia import analyze_multimedia, ALL_MEDIA_EXTS, EXT_TO_MIME
 from .persistence import detect_persistence
 from .remote import collect_remote_snapshot, collect_remote_host_info, RemoteSnapshotError
 from .report import build_report
+from .reporting import render_report_html, render_report_pdf
 from .services import detect_services
 from .tails import analyze_tails
 from .timeline import build_timeline
@@ -90,6 +91,18 @@ class CarveRequest(BaseModel):
     sig_groups: Optional[list] = None   # None = all groups
     max_files: int = 200
     max_scan_gb: float = 2.0            # scan ceiling in GB
+
+
+class ReportExportRequest(BaseModel):
+    report: dict
+    report_title: Optional[str] = "OS Forensics Comprehensive Report"
+    case_name: Optional[str] = None
+    source_path: Optional[str] = None
+    generated_by: Optional[str] = "OSForensics"
+    case_data: Optional[dict] = None
+    intro_text: Optional[str] = None
+    report_variant: Optional[str] = "comprehensive"
+    include_raw_json: Optional[bool] = True
 
 
 app = FastAPI(title="OS Forensics API")
@@ -143,6 +156,15 @@ def _legal_disclaimer() -> dict:
             "Findings should be corroborated with additional investigative methods.",
         ],
     }
+
+
+def _safe_filename(value: str, default: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return default
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in raw)
+    cleaned = cleaned.strip("._")
+    return cleaned or default
 
 
 def _attach_legal_context(
@@ -460,6 +482,51 @@ def multimedia_scan(req: AnalyzeRequest):
         raise HTTPException(status_code=400, detail=str(e))
     try:
         return {"multimedia": analyze_multimedia(fs)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/report/export/html")
+def export_report_html(req: ReportExportRequest):
+    """Render a structured, comprehensive forensic report as downloadable HTML."""
+    try:
+        html_doc = render_report_html(
+            req.report,
+            report_title=req.report_title or "OS Forensics Comprehensive Report",
+            case_name=req.case_name or "",
+            source_path=req.source_path or "",
+            generated_by=req.generated_by or "OSForensics",
+            case_data=req.case_data or None,
+            intro_text=req.intro_text or "",
+            report_variant=req.report_variant or "comprehensive",
+            include_raw_json=req.include_raw_json if req.include_raw_json is not None else True,
+        )
+        filename = _safe_filename(req.case_name or req.report_title or "forensics_report", "forensics_report") + ".html"
+        headers = {"Content-Disposition": f"attachment; filename={filename}"}
+        return Response(content=html_doc, media_type="text/html; charset=utf-8", headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
+
+
+@app.post("/report/export/pdf")
+def export_report_pdf(req: ReportExportRequest):
+    """Render a comprehensive forensic report as downloadable PDF."""
+    try:
+        pdf_bytes = render_report_pdf(
+            req.report,
+            report_title=req.report_title or "OS Forensics Comprehensive Report",
+            case_name=req.case_name or "",
+            source_path=req.source_path or "",
+            generated_by=req.generated_by or "OSForensics",
+            case_data=req.case_data or None,
+            intro_text=req.intro_text or "",
+            report_variant=req.report_variant or "comprehensive",
+        )
+        filename = _safe_filename(req.case_name or req.report_title or "forensics_report", "forensics_report") + ".pdf"
+        headers = {"Content-Disposition": f"attachment; filename={filename}"}
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+    except RuntimeError as e:
+        raise HTTPException(status_code=501, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e), "trace": traceback.format_exc()})
 

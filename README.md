@@ -122,3 +122,33 @@ The backend now includes legal/procedural metadata to support forensic workflow 
 - Legal disclaimer block:
 	- Reports include `legal_disclaimer` with forensic-safe handling notes and corroboration guidance.
 
+## Comprehensive Reporting Module
+
+The application now supports structured export of a full forensic dossier:
+
+- `POST /report/export/html`
+	- Input: report payload plus optional metadata (`report_title`, `case_name`, `source_path`, `generated_by`, `case_data`, `intro_text`, `report_variant`, `include_raw_json`).
+	- Output: downloadable HTML report with sectioned tables for tools, timeline, deleted artifacts, persistence, config, services, browser data, multimedia, Tails, containers, and legal metadata.
+
+- `POST /report/export/pdf`
+	- Input: same payload as HTML export (except `include_raw_json`, which is HTML-specific).
+	- Output: downloadable PDF report suitable for sharing and legal documentation workflows.
+
+Report variants:
+	- `comprehensive`: full technical details and legal metadata.
+	- `legal`: case-oriented report with custody/audit emphasis.
+	- `executive`: concise summary-focused format for leadership briefings.
+
+Case-level behavior:
+	- If `case_data` is provided, the exporter builds a case-level report by aggregating all source reports under that case.
+	- Includes intro narrative, case information, source rollup, and merged findings across all sources.
+
+UI workflow:
+
+- Open `Report` view after analysis.
+- Use export buttons in header:
+	- `JSON` (raw report)
+	- `HTML` (comprehensive structured dossier)
+	- `PDF` (portable report document)
+	- `Exec PDF` (concise executive summary format)
+

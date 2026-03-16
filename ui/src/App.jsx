@@ -25,6 +25,19 @@ const post = async (url, body) => {
   return res.json();
 };
 
+const postBlob = async (url, body) => {
+  const res = await fetch(`${API}${url}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+  const disp = res.headers.get("content-disposition") || "";
+  const match = disp.match(/filename=([^;]+)/i);
+  const filename = match ? match[1].trim().replace(/^"|"$/g, "") : null;
+  return { blob: await res.blob(), filename };
+};
+
 const get = async (url) => {
   const res = await fetch(`${API}${url}`);
   if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
@@ -58,6 +71,8 @@ const apiRecover     = (img, recoveryId) => post("/deleted/recover", { image_pat
 const apiCarveGroups = ()                => get("/deleted/carve/groups");
 const apiCarve       = (img, opts)       => post("/deleted/carve", { image_path: img, ...opts });
 const apiMultimedia  = (path)            => post("/multimedia", { image_path: path });
+const apiExportReportHtml = (body)       => postBlob("/report/export/html", body);
+const apiExportReportPdf  = (body)       => postBlob("/report/export/pdf", body);
 const apiMediaUrl    = (imgPath, filePath) =>
   `${API}/multimedia/view?image_path=${encodeURIComponent(imgPath)}&file_path=${encodeURIComponent(filePath)}`;
 
@@ -4546,7 +4561,7 @@ const REPORT_TABS = [
   { id: "tools",       label: "Tools",       Icon: Search    },
 ];
 
-function ReportPanel({ report, liveInfo, imgPath, onClear, onExport, onReanalyze, reanalyzing }) {
+function ReportPanel({ report, liveInfo, imgPath, onClear, onExportJson, onExportHtml, onExportPdf, onExportExecutivePdf, onReanalyze, reanalyzing }) {
   const [tab, setTab] = useState("summary");
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false);
   const [visibleTabIds, setVisibleTabIds] = useState(REPORT_TABS.map((t) => t.id));
@@ -4731,7 +4746,10 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExport, onReanalyze
           <button className="btn-secondary btn-sm" onClick={onReanalyze} disabled={reanalyzing} title="Re-run analysis on the same image">
             <RefreshCw size={12} className={reanalyzing ? "spin" : ""} /> {reanalyzing ? "Analyzing…" : "Reanalyze"}
           </button>
-          <button className="btn-secondary btn-sm" onClick={onExport}><FolderOpen size={12} /> Export</button>
+          <button className="btn-secondary btn-sm" onClick={onExportJson} title="Download raw forensic report as JSON"><FolderOpen size={12} /> JSON</button>
+          <button className="btn-secondary btn-sm" onClick={onExportHtml} title="Generate a structured HTML forensic dossier"><FileText size={12} /> HTML</button>
+          <button className="btn-secondary btn-sm" onClick={onExportPdf} title="Export comprehensive report as PDF"><Download size={12} /> PDF</button>
+          <button className="btn-secondary btn-sm" onClick={onExportExecutivePdf} title="Export a concise executive summary PDF"><Download size={12} /> Exec PDF</button>
           <button className="btn-secondary btn-sm" onClick={onClear}><Trash2 size={12} /> Clear</button>
         </div>
       </div>
@@ -5875,6 +5893,49 @@ export default function App() {
     a.href = URL.createObjectURL(blob); a.download = "forensic_report.json"; a.click();
   }
 
+  function triggerBlobDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  async function exportComprehensive(format, variantOverride = null) {
+    if (!report) {
+      setStatus("No report to export");
+      return;
+    }
+
+    const variant = variantOverride || (activeCase ? "legal" : "comprehensive");
+    const intro = activeCase
+      ? `This report presents a case-level forensic narrative for ${activeCase.name || "the selected investigation"}. It consolidates findings from all attached evidence sources, highlights high-risk indicators, and documents chain-of-custody context for evidentiary review.`
+      : "This report presents a structured forensic narrative for the selected evidence source and highlights key indicators requiring analyst attention.";
+
+    const payload = {
+      report,
+      report_title: "OS Forensics Comprehensive Report",
+      case_name: activeCase?.name || "",
+      source_path: imgPath || "",
+      generated_by: "OSForensics UI",
+      case_data: activeCase || null,
+      intro_text: intro,
+      report_variant: variant,
+      include_raw_json: format === "html",
+    };
+
+    try {
+      const res = format === "pdf" ? await apiExportReportPdf(payload) : await apiExportReportHtml(payload);
+      const ext = format === "pdf" ? "pdf" : "html";
+      const fallback = `${(activeCase?.name || "forensics_report").replace(/[^a-z0-9_-]+/gi, "_")}.${ext}`;
+      triggerBlobDownload(res.blob, res.filename || fallback);
+      setStatus(`Comprehensive ${format.toUpperCase()} report exported`);
+    } catch (e) {
+      setStatus(`Failed to export ${format.toUpperCase()} report: ${String(e)}`);
+    }
+  }
+
   function handleAction(key) {
     switch (key) {
       case "analyze":       return setDialog("analyze");
@@ -5986,7 +6047,10 @@ export default function App() {
               liveInfo={imgPath === "/" || report?.summary?.analysis_mode === "remote_ssh_live" ? liveInfo : null}
               imgPath={imgPath}
               onClear={() => handleAction("clear")}
-              onExport={() => downloadJSON(report)}
+              onExportJson={() => downloadJSON(report)}
+              onExportHtml={() => exportComprehensive("html")}
+              onExportPdf={() => exportComprehensive("pdf")}
+              onExportExecutivePdf={() => exportComprehensive("pdf", "executive")}
               onReanalyze={handleReanalyze}
               reanalyzing={reanalyzing}
             />
