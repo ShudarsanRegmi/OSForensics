@@ -5142,7 +5142,7 @@ function CasesView({ onOpen, onNewCase }) {
 }
 
 // ── CasePanel ─────────────────────────────────────────────────────────────────
-function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAddTailsSource, onAddTailsUsbSource, onScanLiveToCase, onDeleteSource, onBack }) {
+function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAddTailsSource, onAddTailsUsbSource, onScanLiveToCase, onDeleteSource, onBack, onExportCaseHtml, onExportCasePdf }) {
   const [activeTab, setActiveTab] = useState("sources");
   const { data_sources = [] } = caseData;
   const chainOfCustody = caseData.chain_of_custody || [];
@@ -5205,6 +5205,12 @@ function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAd
           </button>
           <button className="btn-secondary btn-sm tails-btn" onClick={onAddTailsSource} title="Add source with dedicated TailsOS analysis" style={{ marginRight: 8 }}>
             <TailsLogo size="sm" /> Analyze TailsOS
+          </button>
+          <button className="btn-secondary btn-sm" onClick={onExportCaseHtml} title="Export full case-level report as HTML" style={{ marginRight: 8 }}>
+            <FileText size={12} /> Case HTML
+          </button>
+          <button className="btn-secondary btn-sm" onClick={onExportCasePdf} title="Export full case-level report as PDF" style={{ marginRight: 8 }}>
+            <Download size={12} /> Case PDF
           </button>
           <button className="btn-primary btn-sm" onClick={onAddSource}>
             <Plus size={13} /> Add Data Source
@@ -5936,6 +5942,43 @@ export default function App() {
     }
   }
 
+  async function exportCaseLevel(format, variantOverride = null) {
+    if (!activeCase) {
+      setStatus("No case selected");
+      return;
+    }
+
+    const sourceReports = (activeCase.data_sources || []).map((src) => src?.report).filter((r) => r && typeof r === "object");
+    const seedReport = sourceReports[0] || report || { os_info: {}, summary: {} };
+    const sourceCount = activeCase.data_sources?.length || 0;
+    const variant = variantOverride || "legal";
+    const intro = `Case-level forensic dossier for ${activeCase.name || "selected case"}. ` +
+      `This export aggregates outputs across ${sourceCount} source${sourceCount === 1 ? "" : "s"}, ` +
+      `including per-source indicators, integrity context, and case-level chain-of-custody/audit records.`;
+
+    const payload = {
+      report: seedReport,
+      report_title: `${activeCase.name || "Case"} - Case-Level Forensic Report`,
+      case_name: activeCase.name || "",
+      source_path: "",
+      generated_by: "OSForensics UI",
+      case_data: activeCase,
+      intro_text: intro,
+      report_variant: variant,
+      include_raw_json: format === "html",
+    };
+
+    try {
+      const res = format === "pdf" ? await apiExportReportPdf(payload) : await apiExportReportHtml(payload);
+      const ext = format === "pdf" ? "pdf" : "html";
+      const fallback = `${(activeCase.name || "case_report").replace(/[^a-z0-9_-]+/gi, "_")}_case_level.${ext}`;
+      triggerBlobDownload(res.blob, res.filename || fallback);
+      setStatus(`Case-level ${format.toUpperCase()} report exported`);
+    } catch (e) {
+      setStatus(`Failed to export case-level ${format.toUpperCase()} report: ${String(e)}`);
+    }
+  }
+
   function handleAction(key) {
     switch (key) {
       case "analyze":       return setDialog("analyze");
@@ -6035,6 +6078,8 @@ export default function App() {
                   if (activeSrcId === srcId) { setActiveSrcId(null); setReport(null); setImgPath(null); }
                 } catch (e) { setStatus("Failed to remove source: " + String(e)); }
               }}
+              onExportCaseHtml={() => exportCaseLevel("html")}
+              onExportCasePdf={() => exportCaseLevel("pdf")}
               onBack={() => setView("cases")}
             />
           )}
