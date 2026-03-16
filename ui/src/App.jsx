@@ -31,39 +31,39 @@ const get = async (url) => {
   return res.json();
 };
 
-const apiAnalyze     = (path)       => post("/analyze",        { image_path: path });
-const apiAnalyzeLive = (scanTypes)   => post("/analyze/live",  scanTypes || {});
-const apiLiveInfo    = ()            => get("/live/info");
-const apiFsBrowse    = (path)        => post("/fs/browse",      { path });
-const apiUsbSources  = ()            => get("/fs/usb/sources");
-const apiBrowse      = (img, path)   => post("/explore/browse", { image_path: img, path });
-const apiStat        = (img, path)   => post("/explore/stat",   { image_path: img, path });
-const apiRead        = (img, path)   => post("/explore/read",   { image_path: img, path });
-const apiTree        = ()            => get("/explore/tree");
+const apiAnalyze = (path) => post("/analyze", { image_path: path });
+const apiAnalyzeLive = (scanTypes) => post("/analyze/live", scanTypes || {});
+const apiLiveInfo = () => get("/live/info");
+const apiFsBrowse = (path) => post("/fs/browse", { path });
+const apiUsbSources = () => get("/fs/usb/sources");
+const apiBrowse = (img, path) => post("/explore/browse", { image_path: img, path });
+const apiStat = (img, path) => post("/explore/stat", { image_path: img, path });
+const apiRead = (img, path) => post("/explore/read", { image_path: img, path });
+const apiTree = () => get("/explore/tree");
 
 // ── Case management API ───────────────────────────────────────────────────────
-const apiCasesList   = ()                => get("/cases");
-const apiCaseCreate  = (body)            => post("/cases", body);
-const apiCaseGet     = (id)              => get(`/cases/${id}`);
-const apiCaseDelete  = (id)              => fetch(`${API}/cases/${id}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+const apiCasesList = () => get("/cases");
+const apiCaseCreate = (body) => post("/cases", body);
+const apiCaseGet = (id) => get(`/cases/${id}`);
+const apiCaseDelete = (id) => fetch(`${API}/cases/${id}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
 const apiCaseAnalyze = (caseId, imgPath) => post(`/cases/${caseId}/analyze`, { image_path: imgPath });
 const apiCaseAnalyzeTails = (caseId, imgPath) => post(`/cases/${caseId}/analyze/tails`, { image_path: imgPath });
 const apiCaseAnalyzeLive = (caseId, scanTypes) => post(`/cases/${caseId}/analyze/live`, scanTypes || {});
-const apiCaseDelSrc  = (caseId, srcId)   => fetch(`${API}/cases/${caseId}/sources/${srcId}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
-const apiRecover     = (img, recoveryId) => post("/deleted/recover", { image_path: img, recovery_id: recoveryId });
-const apiCarveGroups = ()                => get("/deleted/carve/groups");
-const apiCarve       = (img, opts)       => post("/deleted/carve", { image_path: img, ...opts });
-const apiMultimedia  = (path)            => post("/multimedia", { image_path: path });
-const apiMediaUrl    = (imgPath, filePath) =>
+const apiCaseDelSrc = (caseId, srcId) => fetch(`${API}/cases/${caseId}/sources/${srcId}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+const apiRecover = (img, recoveryId) => post("/deleted/recover", { image_path: img, recovery_id: recoveryId });
+const apiCarveGroups = () => get("/deleted/carve/groups");
+const apiCarve = (img, opts) => post("/deleted/carve", { image_path: img, ...opts });
+const apiMultimedia = (path) => post("/multimedia", { image_path: path });
+const apiMediaUrl = (imgPath, filePath) =>
   `${API}/multimedia/view?image_path=${encodeURIComponent(imgPath)}&file_path=${encodeURIComponent(filePath)}`;
 
 // ── Agent API ─────────────────────────────────────────────────────────────────
-const apiAgentStatus  = ()    => get("/agent/status");
-const apiAgentReset   = (sid) => fetch(`${API}/agent/reset/${sid}`, { method: "POST" }).then(r => r.json());
+const apiAgentStatus = () => get("/agent/status");
+const apiAgentReset = (sid) => fetch(`${API}/agent/reset/${sid}`, { method: "POST" }).then(r => r.json());
 
 // ─── Severity / icon helpers ──────────────────────────────────────────────────
 const SEV_COLOR = { critical: "#7f1d1d", high: "#dc2626", medium: "#d97706", low: "#16a34a", info: "#2563eb" };
-const SEV_BG    = { critical: "#fef2f2", high: "#fff1f0", medium: "#fffbeb", low: "#f0fdf4", info: "#eff6ff" };
+const SEV_BG = { critical: "#fef2f2", high: "#fff1f0", medium: "#fffbeb", low: "#f0fdf4", info: "#eff6ff" };
 
 function SevBadge({ sev }) {
   const s = (sev || "info").toLowerCase();
@@ -124,102 +124,102 @@ function Modal({ title, onClose, children, width = 540 }) {
 }
 
 const TAILS_CATEGORY_LABELS = {
-    environment: "Environment",
-    persistence: "Persistence",
-    tor: "Tor Activity",
-    browser: "Tor Browser",
-    usb_origin: "USB Origin",
-    memory: "Memory Artifacts",
-    hidden_service: "Hidden Service",
-    anti_forensics: "Anti-Forensics",
-    timeline: "Session Timeline",
-    misconfiguration: "Misconfiguration",
-    operational_profile: "Operational Profile",
+  environment: "Environment",
+  persistence: "Persistence",
+  tor: "Tor Activity",
+  browser: "Tor Browser",
+  usb_origin: "USB Origin",
+  memory: "Memory Artifacts",
+  hidden_service: "Hidden Service",
+  anti_forensics: "Anti-Forensics",
+  timeline: "Session Timeline",
+  misconfiguration: "Misconfiguration",
+  operational_profile: "Operational Profile",
 };
 
 function TailsTab({ findings = [], summary = {} }) {
-    const [search, setSearch] = useState("");
-    const [sev, setSev] = useState("all");
+  const [search, setSearch] = useState("");
+  const [sev, setSev] = useState("all");
 
-    const filtered = useMemo(() => {
-      const q = search.trim().toLowerCase();
-      return (findings || []).filter((f) => {
-        if (sev !== "all" && (f.severity || "info") !== sev) return false;
-        if (!q) return true;
-        return (
-          (f.detail || "").toLowerCase().includes(q) ||
-          (f.category || "").toLowerCase().includes(q) ||
-          (f.evidence || []).some((e) => String(e).toLowerCase().includes(q))
-        );
-      });
-    }, [findings, search, sev]);
-
-    if (!findings || findings.length === 0) {
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (findings || []).filter((f) => {
+      if (sev !== "all" && (f.severity || "info") !== sev) return false;
+      if (!q) return true;
       return (
-        <div className="tab-content">
-          <div className="empty-state">
-            <TailsLogo withText />
-            <p style={{ marginTop: 10 }}>No TailsOS-specific artifacts were detected in this source.</p>
-          </div>
-        </div>
+        (f.detail || "").toLowerCase().includes(q) ||
+        (f.category || "").toLowerCase().includes(q) ||
+        (f.evidence || []).some((e) => String(e).toLowerCase().includes(q))
       );
-    }
+    });
+  }, [findings, search, sev]);
 
+  if (!findings || findings.length === 0) {
     return (
       <div className="tab-content">
-        <div className="tails-head">
-          <div className="tails-head-title"><TailsLogo withText /> Dedicated Tails forensic indicators</div>
-          <div className="tails-head-stats">
-            <span className="tag"><AlertTriangle size={10} /> High: {summary.high_tails ?? 0}</span>
-            <span className="tag"><List size={10} /> Findings: {summary.tails_findings ?? findings.length}</span>
-          </div>
+        <div className="empty-state">
+          <TailsLogo withText />
+          <p style={{ marginTop: 10 }}>No TailsOS-specific artifacts were detected in this source.</p>
         </div>
-
-        <div className="tails-filters">
-          <select className="mm-select" value={sev} onChange={(e) => setSev(e.target.value)}>
-            <option value="all">All severity</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="info">Info</option>
-          </select>
-          <input
-            className="mm-search"
-            type="text"
-            placeholder="Search Tails findings or evidence…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <table className="rp-table">
-          <thead>
-            <tr>
-              <th>Category</th>
-              <th>Severity</th>
-              <th>Detail</th>
-              <th>Evidence</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((f, i) => (
-              <tr key={i}>
-                <td>{TAILS_CATEGORY_LABELS[f.category] || f.category}</td>
-                <td><SevBadge sev={f.severity || "info"} /></td>
-                <td>{f.detail}</td>
-                <td>
-                  {(f.evidence || []).length === 0 ? "-" : (
-                    <ul className="evidence-list">
-                      {(f.evidence || []).slice(0, 6).map((e, j) => <li key={j}><code>{e}</code></li>)}
-                    </ul>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     );
   }
+
+  return (
+    <div className="tab-content">
+      <div className="tails-head">
+        <div className="tails-head-title"><TailsLogo withText /> Dedicated Tails forensic indicators</div>
+        <div className="tails-head-stats">
+          <span className="tag"><AlertTriangle size={10} /> High: {summary.high_tails ?? 0}</span>
+          <span className="tag"><List size={10} /> Findings: {summary.tails_findings ?? findings.length}</span>
+        </div>
+      </div>
+
+      <div className="tails-filters">
+        <select className="mm-select" value={sev} onChange={(e) => setSev(e.target.value)}>
+          <option value="all">All severity</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="info">Info</option>
+        </select>
+        <input
+          className="mm-search"
+          type="text"
+          placeholder="Search Tails findings or evidence…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <table className="rp-table">
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Severity</th>
+            <th>Detail</th>
+            <th>Evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((f, i) => (
+            <tr key={i}>
+              <td>{TAILS_CATEGORY_LABELS[f.category] || f.category}</td>
+              <td><SevBadge sev={f.severity || "info"} /></td>
+              <td>{f.detail}</td>
+              <td>
+                {(f.evidence || []).length === 0 ? "-" : (
+                  <ul className="evidence-list">
+                    {(f.evidence || []).slice(0, 6).map((e, j) => <li key={j}><code>{e}</code></li>)}
+                  </ul>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 // ─── Dialogs ──────────────────────────────────────────────────────────────────
 function AnalyzeDialog({ onClose, onResult }) {
   const [path, setPath] = useState("");
@@ -254,23 +254,23 @@ function AnalyzeDialog({ onClose, onResult }) {
 
 // ─── LIVE SCAN DIALOG ───────────────────────────────────────────────────────
 const SCAN_TYPES = [
-  { key: "timeline",    label: "Timeline",         hint: "File access / modification events",           default: true  },
-  { key: "deleted",     label: "Deleted Files",     hint: "Recoverable deleted file detection",           default: true  },
-  { key: "persistence", label: "Persistence",       hint: "Cron, systemd, rc files, SUID, keys",          default: true  },
-  { key: "services",    label: "Services",          hint: "Installed daemons and service units",          default: true  },
-  { key: "config",      label: "Config Audit",      hint: "Security-relevant config file analysis",       default: false },
-  { key: "browsers",    label: "Browser Artifacts", hint: "History, cookies, extensions",                 default: false },
-  { key: "multimedia",  label: "Multimedia",        hint: "Image / video / audio metadata (slow)",        default: false },
+  { key: "timeline", label: "Timeline", hint: "File access / modification events", default: true },
+  { key: "deleted", label: "Deleted Files", hint: "Recoverable deleted file detection", default: true },
+  { key: "persistence", label: "Persistence", hint: "Cron, systemd, rc files, SUID, keys", default: true },
+  { key: "services", label: "Services", hint: "Installed daemons and service units", default: true },
+  { key: "config", label: "Config Audit", hint: "Security-relevant config file analysis", default: false },
+  { key: "browsers", label: "Browser Artifacts", hint: "History, cookies, extensions", default: false },
+  { key: "multimedia", label: "Multimedia", hint: "Image / video / audio metadata (slow)", default: false },
 ];
 
 function LiveScanDialog({ onClose, onResult, runScan, title = "Scan Live System" }) {
   const defaults = Object.fromEntries(SCAN_TYPES.map(t => [t.key, t.default]));
-  const [types,   setTypes]   = useState(defaults);
+  const [types, setTypes] = useState(defaults);
   const [loading, setLoading] = useState(false);
-  const [err,     setErr]     = useState(null);
+  const [err, setErr] = useState(null);
 
   const toggle = (key) => setTypes(prev => ({ ...prev, [key]: !prev[key] }));
-  const anyOn  = Object.values(types).some(Boolean);
+  const anyOn = Object.values(types).some(Boolean);
 
   async function run() {
     setLoading(true); setErr(null);
@@ -326,13 +326,13 @@ function LiveScanDialog({ onClose, onResult, runScan, title = "Scan Live System"
 
 // ─── FILE PICKER DIALOG ──────────────────────────────────────────────────────
 function FilePickerDialog({ onClose, onResult, analyzeOnPick = true }) {
-  const [cwd,      setCwd]      = useState("/");
+  const [cwd, setCwd] = useState("/");
   const [children, setChildren] = useState([]);
-  const [crumbs,   setCrumbs]   = useState([{ label: "/", path: "/" }]);
+  const [crumbs, setCrumbs] = useState([{ label: "/", path: "/" }]);
   const [selected, setSelected] = useState(null);   // { path, is_dir }
-  const [loading,  setLoading]  = useState(false);
-  const [analyzing,setAnalyzing]= useState(false);
-  const [err,      setErr]      = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [err, setErr] = useState(null);
 
   const navigate = useCallback(async (path) => {
     setLoading(true); setErr(null); setSelected(null);
@@ -359,7 +359,7 @@ function FilePickerDialog({ onClose, onResult, analyzeOnPick = true }) {
   }
 
   const FOLDER_CLR = "#d97706";
-  const FILE_CLR   = "#4b5563";
+  const FILE_CLR = "#4b5563";
 
   return (
     <Modal title="Open — Select Image or Directory" onClose={onClose} width={700}>
@@ -389,7 +389,7 @@ function FilePickerDialog({ onClose, onResult, analyzeOnPick = true }) {
               <span className="fp-entry-icon">
                 {entry.is_dir
                   ? <FolderSearch size={15} style={{ color: FOLDER_CLR }} />
-                  : <File          size={15} style={{ color: FILE_CLR   }} />}
+                  : <File size={15} style={{ color: FILE_CLR }} />}
               </span>
               <span className="fp-entry-name">{entry.name}</span>
               {!entry.is_dir && entry.size != null && (
@@ -420,9 +420,9 @@ function FilePickerDialog({ onClose, onResult, analyzeOnPick = true }) {
 
 // tiny helper used above
 function fmtSize(n) {
-  if (n < 1024)          return `${n} B`;
-  if (n < 1024 * 1024)   return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 ** 3)     return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
 
@@ -462,8 +462,8 @@ function ShortcutsDialog({ onClose }) {
     ["Ctrl + O", "Open Analyze dialog"],
     ["Ctrl + B", "Browse & Open file picker"],
     ["Ctrl + ,", "Preferences"],
-    ["F1",       "Help / About"],
-    ["Escape",   "Close current dialog"],
+    ["F1", "Help / About"],
+    ["Escape", "Close current dialog"],
   ];
   return (
     <Modal title="Keyboard Shortcuts" onClose={onClose} width={400}>
@@ -488,29 +488,29 @@ function MenuBar({ onAction }) {
 
   const menus = {
     File: [
-      { label: "Analyze Image / Mountpoint…", key: "analyze",  shortcut: "Ctrl+O" },
-      { label: "Browse & Open…",               key: "filepick", shortcut: "Ctrl+B" },
+      { label: "Analyze Image / Mountpoint…", key: "analyze", shortcut: "Ctrl+O" },
+      { label: "Browse & Open…", key: "filepick", shortcut: "Ctrl+B" },
       { type: "sep" },
-      { label: "Export Report JSON…",         key: "export" },
+      { label: "Export Report JSON…", key: "export" },
       { type: "sep" },
-      { label: "Clear Analysis",              key: "clear" },
+      { label: "Clear Analysis", key: "clear" },
     ],
     Cases: [
-      { label: "New Case…",       key: "new_case"   },
+      { label: "New Case…", key: "new_case" },
       { label: "Open Cases View", key: "view_cases" },
     ],
     View: [
-      { label: "Show Explorer",   key: "view_explorer" },
-      { label: "Show Report",     key: "view_report" },
+      { label: "Show Explorer", key: "view_explorer" },
+      { label: "Show Report", key: "view_report" },
       { type: "sep" },
-      { label: "Toggle Toolbar",  key: "toolbar" },
+      { label: "Toggle Toolbar", key: "toolbar" },
       { label: "Toggle Status Bar", key: "statusbar" },
     ],
     Tools: [
       { label: "Analyze Image / Mountpoint…", key: "analyze" },
-      { label: "Browse & Open…",               key: "filepick" },
+      { label: "Browse & Open…", key: "filepick" },
       { type: "sep" },
-      { label: "Keyboard Shortcuts…",         key: "shortcuts" },
+      { label: "Keyboard Shortcuts…", key: "shortcuts" },
     ],
     Help: [
       { label: "Keyboard Shortcuts…", key: "shortcuts", shortcut: "F1" },
@@ -550,15 +550,15 @@ function MenuBar({ onAction }) {
 function Toolbar({ visible, onAction }) {
   if (!visible) return null;
   const btns = [
-    { Icon: Search,         label: "Analyze",  key: "analyze",        title: "Analyze path (Ctrl+O)" },
-    { Icon: FolderSearch,   label: "Browse",   key: "filepick",       title: "Browse & Open (Ctrl+B)" },
+    { Icon: Search, label: "Analyze", key: "analyze", title: "Analyze path (Ctrl+O)" },
+    { Icon: FolderSearch, label: "Browse", key: "filepick", title: "Browse & Open (Ctrl+B)" },
     { type: "sep" },
-    { Icon: LayoutPanelLeft,label: "Explorer", key: "view_explorer",  title: "Explorer view" },
-    { Icon: BarChart2,      label: "Report",   key: "view_report",    title: "Report view" },
+    { Icon: LayoutPanelLeft, label: "Explorer", key: "view_explorer", title: "Explorer view" },
+    { Icon: BarChart2, label: "Report", key: "view_report", title: "Report view" },
     { type: "sep" },
-    { Icon: Trash2,         label: "Clear",    key: "clear",          title: "Clear analysis" },
+    { Icon: Trash2, label: "Clear", key: "clear", title: "Clear analysis" },
     { type: "sep" },
-    { Icon: Settings,       label: "Prefs",    key: "settings",       title: "Preferences" },
+    { Icon: Settings, label: "Prefs", key: "settings", title: "Preferences" },
   ];
   return (
     <div className="toolbar">
@@ -648,8 +648,8 @@ function FileTypeIcon({ type, name }) {
   if (type === "directory") return <Folder size={13} style={{ color: "#f59e0b" }} />;
   const ext = name?.split(".").pop()?.toLowerCase();
   if (["log", "txt", "conf", "cfg", "ini", "md"].includes(ext)) return <FileText size={13} style={{ color: "#6366f1" }} />;
-  if (["sh", "bash", "py", "rb", "pl"].includes(ext))            return <Code     size={13} style={{ color: "#10b981" }} />;
-  if (["service", "socket", "timer"].includes(ext))              return <Server   size={13} style={{ color: "#8b5cf6" }} />;
+  if (["sh", "bash", "py", "rb", "pl"].includes(ext)) return <Code size={13} style={{ color: "#10b981" }} />;
+  if (["service", "socket", "timer"].includes(ext)) return <Server size={13} style={{ color: "#8b5cf6" }} />;
   return <File size={13} style={{ color: "#9ca3af" }} />;
 }
 
@@ -740,8 +740,8 @@ function ContentPane({ item, imgPath }) {
   }
 
   const suid_flags = [];
-  if (item.is_suid)   suid_flags.push("SUID");
-  if (item.is_sgid)   suid_flags.push("SGID");
+  if (item.is_suid) suid_flags.push("SUID");
+  if (item.is_sgid) suid_flags.push("SGID");
   if (item.is_sticky) suid_flags.push("Sticky");
 
   return (
@@ -768,18 +768,18 @@ function ContentPane({ item, imgPath }) {
         {tab === "meta" && (
           <table className="meta-table">
             <tbody>
-              <MetaRow label="Path"        value={item.path} mono />
-              <MetaRow label="Type"        value={item.type} />
-              <MetaRow label="Size"        value={item.size_human ? `${item.size_human} (${item.size?.toLocaleString()} bytes)` : item.size} />
+              <MetaRow label="Path" value={item.path} mono />
+              <MetaRow label="Type" value={item.type} />
+              <MetaRow label="Size" value={item.size_human ? `${item.size_human} (${item.size?.toLocaleString()} bytes)` : item.size} />
               <MetaRow label="Permissions" value={item.mode} mono />
-              <MetaRow label="Mode (octal)"value={item.mode_octal} mono />
+              <MetaRow label="Mode (octal)" value={item.mode_octal} mono />
               <MetaRow label="Owner (UID)" value={item.uid} />
               <MetaRow label="Group (GID)" value={item.gid} />
-              <MetaRow label="Inode"       value={item.inode} />
-              <MetaRow label="Hard Links"  value={item.nlinks} />
-              <MetaRow label="Modified"    value={item.mtime} />
-              <MetaRow label="Accessed"    value={item.atime} />
-              <MetaRow label="Changed"     value={item.ctime} />
+              <MetaRow label="Inode" value={item.inode} />
+              <MetaRow label="Hard Links" value={item.nlinks} />
+              <MetaRow label="Modified" value={item.mtime} />
+              <MetaRow label="Accessed" value={item.atime} />
+              <MetaRow label="Changed" value={item.ctime} />
               {item.symlink_target && <MetaRow label="Symlink →" value={item.symlink_target} mono />}
               {suid_flags.length > 0 && <MetaRow label="Special Bits" value={suid_flags.join(", ")} />}
             </tbody>
@@ -814,12 +814,12 @@ function ContentPane({ item, imgPath }) {
 // ─── Pane Divider (drag-to-resize) ─────────────────────────────────────────────
 function PaneDivider({ onDrag }) {
   const dragging = useRef(false);
-  const lastX    = useRef(0);
+  const lastX = useRef(0);
 
   const onMouseDown = useCallback((e) => {
     e.preventDefault();
     dragging.current = true;
-    lastX.current    = e.clientX;
+    lastX.current = e.clientX;
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
@@ -834,10 +834,10 @@ function PaneDivider({ onDrag }) {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup",   onUp);
+      window.removeEventListener("mouseup", onUp);
     }
     window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup",   onUp);
+    window.addEventListener("mouseup", onUp);
   }, [onDrag]);
 
   return <div className="pane-divider" onMouseDown={onMouseDown} />;
@@ -849,7 +849,7 @@ function PaneDivider({ onDrag }) {
 function FsDirTreeNode({ imgPath, path, name, depth, selectedPath, onSelect }) {
   const [expanded, setExpanded] = useState(depth === 0);
   const [children, setChildren] = useState(null);  // null = not yet loaded
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function toggle(e) {
     e.stopPropagation();
@@ -880,8 +880,8 @@ function FsDirTreeNode({ imgPath, path, name, depth, selectedPath, onSelect }) {
           {loading
             ? <RefreshCw size={10} className="spin" />
             : (expanded
-                ? <ChevronDown size={10} />
-                : <ChevronRight size={10} />)}
+              ? <ChevronDown size={10} />
+              : <ChevronRight size={10} />)}
         </span>
         <Folder size={11} style={{ color: "#eab308", flexShrink: 0 }} />
         <span className="fs-tree-label" title={path}>{name}</span>
@@ -928,22 +928,22 @@ function Explorer({ imgPath }) {
   const [explorerMode, setExplorerMode] = useState("artifact");
 
   // ── Artifact mode state ──
-  const [tree, setTree]             = useState(null);
-  const [treeErr, setTreeErr]       = useState(null);
-  const [expandedIds, setExpanded]  = useState(new Set(["os", "logs", "shell_history"]));
-  const [selectedNode, setSelNode]  = useState(null);
+  const [tree, setTree] = useState(null);
+  const [treeErr, setTreeErr] = useState(null);
+  const [expandedIds, setExpanded] = useState(new Set(["os", "logs", "shell_history"]));
+  const [selectedNode, setSelNode] = useState(null);
 
   // ── Shared state (both modes use these) ──
-  const [browseEntries, setBrowse]  = useState(null);
+  const [browseEntries, setBrowse] = useState(null);
   const [browseLoading, setBrowseL] = useState(false);
   const [browsePath, setBrowsePath] = useState(null);
-  const [selectedFile, setSelFile]  = useState(null);
-  const [navStack, setNavStack]     = useState([]);
-  const [treeWidth, setTreeWidth]   = useState(230);
-  const [metaWidth, setMetaWidth]   = useState(300);
+  const [selectedFile, setSelFile] = useState(null);
+  const [navStack, setNavStack] = useState([]);
+  const [treeWidth, setTreeWidth] = useState(230);
+  const [metaWidth, setMetaWidth] = useState(300);
 
   // ── Files mode state ──
-  const [fsTreeSel, setFsTreeSel]   = useState(null);  // currently selected dir in fs tree
+  const [fsTreeSel, setFsTreeSel] = useState(null);  // currently selected dir in fs tree
 
   // Load artifact tree once
   useEffect(() => {
@@ -1130,14 +1130,14 @@ function Explorer({ imgPath }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const SRC_ICON = { bash_history: Terminal, "auth.log": Lock, secure: Lock, syslog: Server, messages: Server, inode: Hash };
-const PERSIST_ICONS  = { crontab: Clock, systemd_service: Server, shell_startup: Terminal, ssh_authorized_keys: Key };
+const PERSIST_ICONS = { crontab: Clock, systemd_service: Server, shell_startup: Terminal, ssh_authorized_keys: Key };
 const PERSIST_LABELS = { crontab: "Suspicious Crontab Entries", systemd_service: "Unknown Systemd Services", shell_startup: "Shell Startup Modifications", ssh_authorized_keys: "SSH Authorized Keys" };
 const DEL_TYPE_META = {
-  deleted_inode:  { label: "Deleted Inodes (TSK)",         Icon: Trash2,        color: "#dc2626", desc: "Files whose directory entry survives in the inode table but are flagged as unallocated." },
-  trash:          { label: "Trash / Recycle Bin",          Icon: FolderOpenIcon, color: "#d97706", desc: "Files moved to the freedesktop Trash. Immediately recoverable." },
-  open_deleted:   { label: "Deleted-but-Open",             Icon: Eye,           color: "#7c3aed", desc: "Files unlinked from disk but still held open by a running process." },
-  anti_forensics: { label: "Anti-Forensics Indicators",    Icon: AlertTriangle, color: "#b45309", desc: "Evidence of intentional evidence destruction (rm, shred, wipe, etc.)." },
-  scan_error:     { label: "Scan Errors",                  Icon: Info,          color: "#6b7280", desc: "" },
+  deleted_inode: { label: "Deleted Inodes (TSK)", Icon: Trash2, color: "#dc2626", desc: "Files whose directory entry survives in the inode table but are flagged as unallocated." },
+  trash: { label: "Trash / Recycle Bin", Icon: FolderOpenIcon, color: "#d97706", desc: "Files moved to the freedesktop Trash. Immediately recoverable." },
+  open_deleted: { label: "Deleted-but-Open", Icon: Eye, color: "#7c3aed", desc: "Files unlinked from disk but still held open by a running process." },
+  anti_forensics: { label: "Anti-Forensics Indicators", Icon: AlertTriangle, color: "#b45309", desc: "Evidence of intentional evidence destruction (rm, shred, wipe, etc.)." },
+  scan_error: { label: "Scan Errors", Icon: Info, color: "#6b7280", desc: "" },
 };
 
 function EmptyState({ icon: Icon, message }) {
@@ -1222,18 +1222,18 @@ function SummaryTab({ report, liveInfo }) {
   const totalHigh = summary?.total_high ?? 0;
   const threatLevel =
     totalHigh >= 10 ? { label: "CRITICAL", cls: "tl-critical" }
-    : totalHigh >= 5  ? { label: "HIGH",     cls: "tl-high"     }
-    : totalHigh >= 1  ? { label: "MEDIUM",   cls: "tl-medium"   }
-    :                   { label: "CLEAN",    cls: "tl-low"      };
+      : totalHigh >= 5 ? { label: "HIGH", cls: "tl-high" }
+        : totalHigh >= 1 ? { label: "MEDIUM", cls: "tl-medium" }
+          : { label: "CLEAN", cls: "tl-low" };
   const stats = [
-    { label: "Tool Findings",       value: summary?.total_tools ?? 0,          danger: false },
-    { label: "High-Risk Tools",     value: summary?.high_risk_tools ?? 0,      danger: true  },
-    { label: "Timeline Events",     value: summary?.timeline_events ?? 0,      danger: false },
-    { label: "High Timeline",       value: summary?.high_timeline ?? 0,        danger: true  },
-    { label: "Deleted / Missing",   value: summary?.deleted_findings ?? 0,     danger: false },
-    { label: "High Deleted",        value: summary?.high_deleted ?? 0,         danger: true  },
-    { label: "Persistence Hits",    value: summary?.persistence_findings ?? 0, danger: false },
-    { label: "High Persistence",    value: summary?.high_persistence ?? 0,     danger: true  },
+    { label: "Tool Findings", value: summary?.total_tools ?? 0, danger: false },
+    { label: "High-Risk Tools", value: summary?.high_risk_tools ?? 0, danger: true },
+    { label: "Timeline Events", value: summary?.timeline_events ?? 0, danger: false },
+    { label: "High Timeline", value: summary?.high_timeline ?? 0, danger: true },
+    { label: "Deleted / Missing", value: summary?.deleted_findings ?? 0, danger: false },
+    { label: "High Deleted", value: summary?.high_deleted ?? 0, danger: true },
+    { label: "Persistence Hits", value: summary?.persistence_findings ?? 0, danger: false },
+    { label: "High Persistence", value: summary?.high_persistence ?? 0, danger: true },
   ];
   return (
     <div className="tab-content">
@@ -1268,15 +1268,15 @@ function SummaryTab({ report, liveInfo }) {
 
 // ── Timeline event-type metadata ─────────────────────────────────────────────
 const ET_META = {
-  attack_chain:             { label: "Attack Chains",     Icon: AlertTriangle },
-  suspicious_command:       { label: "Suspicious Cmds",   Icon: Terminal      },
-  anti_forensics:           { label: "Anti-Forensics",    Icon: Shield        },
-  activity_profile:         { label: "Activity Profile",  Icon: BarChart2     },
-  session_summary:          { label: "Sessions",          Icon: Clock         },
-  frequency_analysis:       { label: "Frequency",         Icon: Activity      },
-  timestamp_reconstruction: { label: "Timestamps",        Icon: Info          },
-  file_modified:            { label: "File Changes",      Icon: FileText      },
-  log_event:                { label: "Log Events",        Icon: Server        },
+  attack_chain: { label: "Attack Chains", Icon: AlertTriangle },
+  suspicious_command: { label: "Suspicious Cmds", Icon: Terminal },
+  anti_forensics: { label: "Anti-Forensics", Icon: Shield },
+  activity_profile: { label: "Activity Profile", Icon: BarChart2 },
+  session_summary: { label: "Sessions", Icon: Clock },
+  frequency_analysis: { label: "Frequency", Icon: Activity },
+  timestamp_reconstruction: { label: "Timestamps", Icon: Info },
+  file_modified: { label: "File Changes", Icon: FileText },
+  log_event: { label: "Log Events", Icon: Server },
 };
 
 // ── Per-type card renderers ───────────────────────────────────────────────────
@@ -1286,7 +1286,7 @@ function AttackChainCard({ ev }) {
   const steps = d.steps || [];
   const lineNos = d.step_line_nos || [];
   const c = SEV_COLOR[ev.severity] || "#7f1d1d";
-  const bg = SEV_BG[ev.severity]   || "#fef2f2";
+  const bg = SEV_BG[ev.severity] || "#fef2f2";
   return (
     <div className="tl-card" style={{ borderLeft: `4px solid ${c}`, background: bg }}>
       <div className="tl-card-header">
@@ -1376,7 +1376,7 @@ function ActivityProfileCard({ ev }) {
 function SuspiciousCommandCard({ ev }) {
   const d = ev.data || {};
   const c = SEV_COLOR[ev.severity] || "#d97706";
-  const bg = SEV_BG[ev.severity]   || "#fffbeb";
+  const bg = SEV_BG[ev.severity] || "#fffbeb";
   return (
     <div className="tl-card" style={{ borderLeft: `3px solid ${c}`, background: bg }}>
       <div className="tl-card-header">
@@ -1444,12 +1444,12 @@ function GenericEventRow({ ev }) {
 
 function renderTimelineEvent(ev, i) {
   switch (ev.event_type) {
-    case "attack_chain":       return <AttackChainCard      key={i} ev={ev} />;
-    case "activity_profile":   return <ActivityProfileCard  key={i} ev={ev} />;
+    case "attack_chain": return <AttackChainCard key={i} ev={ev} />;
+    case "activity_profile": return <ActivityProfileCard key={i} ev={ev} />;
     case "suspicious_command": return <SuspiciousCommandCard key={i} ev={ev} />;
-    case "frequency_analysis": return <FrequencyCard        key={i} ev={ev} />;
-    case "anti_forensics":     return <AntiForensicsCard    key={i} ev={ev} />;
-    default:                   return <GenericEventRow      key={i} ev={ev} />;
+    case "frequency_analysis": return <FrequencyCard key={i} ev={ev} />;
+    case "anti_forensics": return <AntiForensicsCard key={i} ev={ev} />;
+    default: return <GenericEventRow key={i} ev={ev} />;
   }
 }
 
@@ -1475,16 +1475,16 @@ function Section({ title, icon: Icon, count, severity, children, defaultOpen = t
 }
 
 // ── Bash History: Analysis view ─────────────────────────────────────────────
-const BH_HIGH_RISK = new Set(["Reverse Shell","Exploitation","Credential Access","Privilege Escalation","Anti-Forensics","Exfiltration","Lateral Movement","Persistence"]);
+const BH_HIGH_RISK = new Set(["Reverse Shell", "Exploitation", "Credential Access", "Privilege Escalation", "Anti-Forensics", "Exfiltration", "Lateral Movement", "Persistence"]);
 
 function BashAnalysisView({ events, dateRangeMs }) {
-  const [section,    setSection]    = useState("suspicious");
+  const [section, setSection] = useState("suspicious");
   const [userFilter, setUserFilter] = useState("all");
-  const [search,     setSearch]     = useState("");
-  const [navWidth,   setNavWidth]   = useState(180);
+  const [search, setSearch] = useState("");
+  const [navWidth, setNavWidth] = useState(180);
   const clampNav = (w) => Math.max(120, Math.min(320, w));
 
-  const allUsers  = [...new Set(events.map(e => e.data?.user).filter(Boolean))];
+  const allUsers = [...new Set(events.map(e => e.data?.user).filter(Boolean))];
   const rawEvents = events.filter(e => e.event_type === "bash_history_raw");
 
   const visible = events.filter(e => {
@@ -1494,27 +1494,27 @@ function BashAnalysisView({ events, dateRangeMs }) {
     return true;
   });
 
-  const by  = (type) => visible.filter(e => e.event_type === type);
-  const sev = (evs)  => evs.some(e => e.severity === "critical") ? "critical"
-                      : evs.some(e => e.severity === "high")     ? "high" : "medium";
+  const by = (type) => visible.filter(e => e.event_type === type);
+  const sev = (evs) => evs.some(e => e.severity === "critical") ? "critical"
+    : evs.some(e => e.severity === "high") ? "high" : "medium";
 
-  const chains   = by("attack_chain");
+  const chains = by("attack_chain");
   const suspCmds = by("suspicious_command");
-  const af       = by("anti_forensics");
+  const af = by("anti_forensics");
   const profiles = by("activity_profile");
   const sessions = by("session_summary");
-  const other    = visible.filter(e =>
-    !["attack_chain","suspicious_command","anti_forensics","activity_profile",
-      "frequency_analysis","session_summary","timestamp_reconstruction"].includes(e.event_type)
+  const other = visible.filter(e =>
+    !["attack_chain", "suspicious_command", "anti_forensics", "activity_profile",
+      "frequency_analysis", "session_summary", "timestamp_reconstruction"].includes(e.event_type)
   );
 
   const navItems = [
-    { id: "suspicious", label: "Suspicious Cmds",  Icon: Terminal,      count: suspCmds.length, sev: suspCmds.length ? sev(suspCmds) : null },
-    { id: "chains",     label: "Attack Chains",    Icon: AlertTriangle, count: chains.length,   sev: chains.length   ? sev(chains)   : null },
-    { id: "af",         label: "Anti-Forensics",   Icon: Shield,        count: af.length,       sev: af.length       ? "high"        : null },
-    { id: "frequency",  label: "Frequency",        Icon: BarChart2,     count: null },
-    { id: "profile",    label: "Activity Profile", Icon: Activity,      count: profiles.length },
-    { id: "sessions",   label: "Sessions",         Icon: Clock,         count: sessions.length },
+    { id: "suspicious", label: "Suspicious Cmds", Icon: Terminal, count: suspCmds.length, sev: suspCmds.length ? sev(suspCmds) : null },
+    { id: "chains", label: "Attack Chains", Icon: AlertTriangle, count: chains.length, sev: chains.length ? sev(chains) : null },
+    { id: "af", label: "Anti-Forensics", Icon: Shield, count: af.length, sev: af.length ? "high" : null },
+    { id: "frequency", label: "Frequency", Icon: BarChart2, count: null },
+    { id: "profile", label: "Activity Profile", Icon: Activity, count: profiles.length },
+    { id: "sessions", label: "Sessions", Icon: Clock, count: sessions.length },
     ...(other.length > 0 ? [{ id: "other", label: "Other Events", Icon: Info, count: other.length }] : []),
   ];
 
@@ -1600,19 +1600,19 @@ function BashAnalysisView({ events, dateRangeMs }) {
 
 // ── Command category taxonomy for frequency analysis ─────────────────────────
 const CMD_TAXONOMY = [
-  { name: "File Operations", color: "#2563eb", risk: false, cmds: new Set(["ls","cp","mv","rm","mkdir","rmdir","touch","find","chmod","chown","chgrp","ln","rsync","scp","sftp","install","rename","stat","file"]) },
-  { name: "Text Processing", color: "#7c3aed", risk: false, cmds: new Set(["cat","grep","awk","sed","sort","uniq","wc","head","tail","less","more","cut","tr","diff","patch","echo","printf","tee","xargs","strings"]) },
-  { name: "Compression",     color: "#0891b2", risk: false, cmds: new Set(["tar","zip","unzip","gzip","gunzip","bzip2","xz","7z","zstd","ar","cpio","compress"]) },
-  { name: "Network",         color: "#059669", risk: false, cmds: new Set(["ping","traceroute","tracepath","curl","wget","ssh","ftp","nc","ncat","dig","host","nslookup","ip","ifconfig","netstat","ss","arp","route","mtr","whois"]) },
-  { name: "Process Mgmt",    color: "#6366f1", risk: false, cmds: new Set(["ps","top","htop","kill","pkill","killall","nice","renice","jobs","bg","fg","nohup","watch","timeout","strace","ltrace","lsof"]) },
-  { name: "System Info",     color: "#8b5cf6", risk: false, cmds: new Set(["uname","whoami","id","hostname","uptime","df","du","free","lscpu","lsblk","lshw","dmesg","journalctl","systemctl","service","mount","umount","env","printenv"]) },
-  { name: "Package Mgmt",    color: "#d97706", risk: false, cmds: new Set(["apt","apt-get","dpkg","yum","dnf","rpm","pacman","pip","pip3","npm","gem","cargo","go","snap","flatpak"]) },
-  { name: "Scripting",       color: "#f59e0b", risk: false, cmds: new Set(["python","python3","perl","ruby","bash","sh","zsh","fish","node","nodejs","php","lua"]) },
-  { name: "Reconnaissance",  color: "#dc2626", risk: true,  cmds: new Set(["nmap","masscan","zmap","nikto","gobuster","dirb","dirbuster","enum4linux","smbclient","rpcclient","ldapsearch","dnsenum","fierce","recon-ng","theharvester"]) },
-  { name: "Exploitation",    color: "#b91c1c", risk: true,  cmds: new Set(["msfconsole","msfvenom","sqlmap","hydra","medusa","john","hashcat","aircrack-ng","airmon-ng","airodump-ng","reaver","wifite"]) },
-  { name: "Privilege Esc.",  color: "#ef4444", risk: true,  cmds: new Set(["sudo","su","passwd","chpasswd","visudo","usermod","useradd","newgrp","pkexec"]) },
-  { name: "Anti-Forensics",  color: "#7f1d1d", risk: true,  cmds: new Set(["shred","wipe","srm","dd","secure-delete","bleachbit"]) },
-  { name: "Tunneling",       color: "#9f1239", risk: true,  cmds: new Set(["socat","chisel","ngrok","proxychains","tor","torsocks","stunnel","iodine","ptunnel","dns2tcp"]) },
+  { name: "File Operations", color: "#2563eb", risk: false, cmds: new Set(["ls", "cp", "mv", "rm", "mkdir", "rmdir", "touch", "find", "chmod", "chown", "chgrp", "ln", "rsync", "scp", "sftp", "install", "rename", "stat", "file"]) },
+  { name: "Text Processing", color: "#7c3aed", risk: false, cmds: new Set(["cat", "grep", "awk", "sed", "sort", "uniq", "wc", "head", "tail", "less", "more", "cut", "tr", "diff", "patch", "echo", "printf", "tee", "xargs", "strings"]) },
+  { name: "Compression", color: "#0891b2", risk: false, cmds: new Set(["tar", "zip", "unzip", "gzip", "gunzip", "bzip2", "xz", "7z", "zstd", "ar", "cpio", "compress"]) },
+  { name: "Network", color: "#059669", risk: false, cmds: new Set(["ping", "traceroute", "tracepath", "curl", "wget", "ssh", "ftp", "nc", "ncat", "dig", "host", "nslookup", "ip", "ifconfig", "netstat", "ss", "arp", "route", "mtr", "whois"]) },
+  { name: "Process Mgmt", color: "#6366f1", risk: false, cmds: new Set(["ps", "top", "htop", "kill", "pkill", "killall", "nice", "renice", "jobs", "bg", "fg", "nohup", "watch", "timeout", "strace", "ltrace", "lsof"]) },
+  { name: "System Info", color: "#8b5cf6", risk: false, cmds: new Set(["uname", "whoami", "id", "hostname", "uptime", "df", "du", "free", "lscpu", "lsblk", "lshw", "dmesg", "journalctl", "systemctl", "service", "mount", "umount", "env", "printenv"]) },
+  { name: "Package Mgmt", color: "#d97706", risk: false, cmds: new Set(["apt", "apt-get", "dpkg", "yum", "dnf", "rpm", "pacman", "pip", "pip3", "npm", "gem", "cargo", "go", "snap", "flatpak"]) },
+  { name: "Scripting", color: "#f59e0b", risk: false, cmds: new Set(["python", "python3", "perl", "ruby", "bash", "sh", "zsh", "fish", "node", "nodejs", "php", "lua"]) },
+  { name: "Reconnaissance", color: "#dc2626", risk: true, cmds: new Set(["nmap", "masscan", "zmap", "nikto", "gobuster", "dirb", "dirbuster", "enum4linux", "smbclient", "rpcclient", "ldapsearch", "dnsenum", "fierce", "recon-ng", "theharvester"]) },
+  { name: "Exploitation", color: "#b91c1c", risk: true, cmds: new Set(["msfconsole", "msfvenom", "sqlmap", "hydra", "medusa", "john", "hashcat", "aircrack-ng", "airmon-ng", "airodump-ng", "reaver", "wifite"]) },
+  { name: "Privilege Esc.", color: "#ef4444", risk: true, cmds: new Set(["sudo", "su", "passwd", "chpasswd", "visudo", "usermod", "useradd", "newgrp", "pkexec"]) },
+  { name: "Anti-Forensics", color: "#7f1d1d", risk: true, cmds: new Set(["shred", "wipe", "srm", "dd", "secure-delete", "bleachbit"]) },
+  { name: "Tunneling", color: "#9f1239", risk: true, cmds: new Set(["socat", "chisel", "ngrok", "proxychains", "tor", "torsocks", "stunnel", "iodine", "ptunnel", "dns2tcp"]) },
 ];
 
 function classifyCmd(cmdStr) {
@@ -1626,7 +1626,7 @@ function classifyCmd(cmdStr) {
 // ── Frequency Analysis Panel ──────────────────────────────────────────────────
 function FrequencyAnalysisPanel({ rawEvents, dateRangeMs }) {
   const [viewMode, setViewMode] = useState("command");
-  const [topN,     setTopN]     = useState(20);
+  const [topN, setTopN] = useState(20);
 
   const allLines = rawEvents.flatMap(e =>
     filterBashLinesByDateRange(e.data?.lines || [], dateRangeMs).map(l => ({ ...l, user: e.data?.user }))
@@ -1649,17 +1649,17 @@ function FrequencyAnalysisPanel({ rawEvents, dateRangeMs }) {
     cmdFreqMap[base].count++;
   }
   const cmdRows = Object.entries(cmdFreqMap).sort((a, b) => b[1].count - a[1].count).slice(0, topN);
-  const maxCmd  = cmdRows[0]?.[1].count || 1;
+  const maxCmd = cmdRows[0]?.[1].count || 1;
 
   // By-category frequency
   const catFreqMap = {};
   for (const line of allLines) {
-    const cat  = classifyCmd(line.cmd);
+    const cat = classifyCmd(line.cmd);
     if (!catFreqMap[cat.name]) catFreqMap[cat.name] = { count: 0, color: cat.color, risk: cat.risk };
     catFreqMap[cat.name].count++;
   }
   const catRows = Object.entries(catFreqMap).sort((a, b) => b[1].count - a[1].count);
-  const maxCat  = catRows[0]?.[1].count || 1;
+  const maxCat = catRows[0]?.[1].count || 1;
 
   return (
     <div className="freq-panel">
@@ -1696,7 +1696,7 @@ function FrequencyAnalysisPanel({ rawEvents, dateRangeMs }) {
             <span className="fch-bar">Frequency</span>
           </div>
           {cmdRows.map(([cmd, info]) => {
-            const pct    = ((info.count / totalCmds) * 100).toFixed(1);
+            const pct = ((info.count / totalCmds) * 100).toFixed(1);
             const barPct = Math.round((info.count / maxCmd) * 100);
             return (
               <div key={cmd} className={`freq-row ${info.risk ? "freq-row-risk" : ""}`}>
@@ -1728,7 +1728,7 @@ function FrequencyAnalysisPanel({ rawEvents, dateRangeMs }) {
             <span className="fch-bar">Frequency</span>
           </div>
           {catRows.map(([cat, info]) => {
-            const pct    = ((info.count / totalCmds) * 100).toFixed(1);
+            const pct = ((info.count / totalCmds) * 100).toFixed(1);
             const barPct = Math.round((info.count / maxCat) * 100);
             return (
               <div key={cat} className={`freq-row ${info.risk ? "freq-row-risk" : ""}`}>
@@ -1765,7 +1765,7 @@ const SC_HIGH_RISK = BH_HIGH_RISK;
 function SuspiciousCommandsPanel({ events: sevs }) {
   const allCats = [...new Set(sevs.map(ev => ev.data?.category || "General"))].sort();
   const [activeCat, setActiveCat] = useState(allCats[0] || "General");
-  const [search,    setSearch]    = useState("");
+  const [search, setSearch] = useState("");
 
   const catCounts = allCats.reduce((acc, cat) => {
     acc[cat] = sevs.filter(ev => (ev.data?.category || "General") === cat).length;
@@ -1776,7 +1776,7 @@ function SuspiciousCommandsPanel({ events: sevs }) {
     .filter(ev => (ev.data?.category || "General") === activeCat)
     .filter(ev => !search ||
       (ev.data?.command || "").toLowerCase().includes(search.toLowerCase()) ||
-      (ev.data?.label   || "").toLowerCase().includes(search.toLowerCase()));
+      (ev.data?.label || "").toLowerCase().includes(search.toLowerCase()));
 
   const isHR = SC_HIGH_RISK.has(activeCat);
 
@@ -1788,7 +1788,7 @@ function SuspiciousCommandsPanel({ events: sevs }) {
           <Filter size={11} style={{ marginRight: 5 }} />Categories
         </div>
         {allCats.map(cat => {
-          const hr  = SC_HIGH_RISK.has(cat);
+          const hr = SC_HIGH_RISK.has(cat);
           const cnt = catCounts[cat];
           return (
             <button key={cat}
@@ -1797,8 +1797,10 @@ function SuspiciousCommandsPanel({ events: sevs }) {
               {hr && <AlertTriangle size={10} style={{ color: "#dc2626", flexShrink: 0 }} />}
               <span className="sc-cat-nav-label">{cat}</span>
               <span className="sc-cat-nav-count"
-                style={{ background: hr ? "#fef2f2" : undefined, color: hr ? "#dc2626" : undefined,
-                         border: `1px solid ${hr ? "#fecaca" : "#e5e7eb"}` }}>
+                style={{
+                  background: hr ? "#fef2f2" : undefined, color: hr ? "#dc2626" : undefined,
+                  border: `1px solid ${hr ? "#fecaca" : "#e5e7eb"}`
+                }}>
                 {cnt}
               </span>
             </button>
@@ -1820,23 +1822,23 @@ function SuspiciousCommandsPanel({ events: sevs }) {
           {catItems.length === 0
             ? <div className="tl-empty-mini">No commands match filter.</div>
             : catItems.map((ev, i) => {
-                const d = ev.data || {};
-                const c = SEV_COLOR[ev.severity] || "#d97706";
-                return (
-                  <div key={i} className="sc-cmd-item" style={{ borderLeft: `3px solid ${c}` }}>
-                    <div className="sc-cmd-item-top">
-                      <span className="sc-cmd-meta">
-                        {d.user     && <span className="sc-meta-chip sc-meta-user"><Users size={9} />{d.user}</span>}
-                        {d.line_no != null && <span className="sc-meta-chip sc-meta-line">L{d.line_no}</span>}
-                        {ev.timestamp !== "unknown" && <span className="sc-meta-chip sc-meta-ts">{ev.timestamp}</span>}
-                      </span>
-                      <span className="sc-cmd-label">{d.label || ""}</span>
-                      <SevBadge sev={ev.severity} />
-                    </div>
-                    <code className="sc-cmd-code">{d.command || ""}</code>
+              const d = ev.data || {};
+              const c = SEV_COLOR[ev.severity] || "#d97706";
+              return (
+                <div key={i} className="sc-cmd-item" style={{ borderLeft: `3px solid ${c}` }}>
+                  <div className="sc-cmd-item-top">
+                    <span className="sc-cmd-meta">
+                      {d.user && <span className="sc-meta-chip sc-meta-user"><Users size={9} />{d.user}</span>}
+                      {d.line_no != null && <span className="sc-meta-chip sc-meta-line">L{d.line_no}</span>}
+                      {ev.timestamp !== "unknown" && <span className="sc-meta-chip sc-meta-ts">{ev.timestamp}</span>}
+                    </span>
+                    <span className="sc-cmd-label">{d.label || ""}</span>
+                    <SevBadge sev={ev.severity} />
                   </div>
-                );
-              })
+                  <code className="sc-cmd-code">{d.command || ""}</code>
+                </div>
+              );
+            })
           }
         </div>
       </div>
@@ -1849,17 +1851,17 @@ const RH_HIGH_RISK = BH_HIGH_RISK;
 
 function BashRawView({ rawEvents, dateRangeMs }) {
   const [selectedUser, setSelectedUser] = useState("");
-  const [catFilter,    setCatFilter]    = useState("all");
+  const [catFilter, setCatFilter] = useState("all");
   const [showSuspOnly, setShowSuspOnly] = useState(false);
-  const [histSearch,   setHistSearch]   = useState("");
+  const [histSearch, setHistSearch] = useState("");
 
   if (!rawEvents.length)
     return <div className="tl-empty-mini">No raw history data. The history file may be empty.</div>;
 
   const activeUser = selectedUser || rawEvents[0]?.data?.user || "";
-  const ev         = rawEvents.find(e => e.data?.user === activeUser) || rawEvents[0];
-  const lines      = ev?.data?.lines || [];
-  const suspCount  = lines.filter(l => l.suspicious).length;
+  const ev = rawEvents.find(e => e.data?.user === activeUser) || rawEvents[0];
+  const lines = ev?.data?.lines || [];
+  const suspCount = lines.filter(l => l.suspicious).length;
   const linesInRange = filterBashLinesByDateRange(lines, dateRangeMs);
   const orderedLines = [...linesInRange].sort((a, b) => {
     const ta = getBashLineTimestampMs(a);
@@ -1926,22 +1928,22 @@ function BashRawView({ rawEvents, dateRangeMs }) {
           </thead>
           <tbody>
             {visible.length === 0
-              ? <tr><td colSpan={4} style={{ textAlign:"center", padding:"24px", color:"#9ca3af" }}>No lines match filter.</td></tr>
+              ? <tr><td colSpan={4} style={{ textAlign: "center", padding: "24px", color: "#9ca3af" }}>No lines match filter.</td></tr>
               : visible.map(line => {
-                  const isHR   = RH_HIGH_RISK.has(line.category);
-                  const catClr = isHR ? "#dc2626" : line.category !== "General" ? "#6366f1" : "#9ca3af";
-                  return (
-                    <tr key={line.no} className={line.suspicious ? "rh-row-susp" : ""}>
-                      <td className="rh-td-lineno">{line.no}</td>
-                      <td className="rh-td-ts">{line.ts || "—"}</td>
-                      <td className="rh-td-cat" style={{ color: catClr }}>
-                        {isHR && <AlertTriangle size={10} style={{ marginRight: 3, verticalAlign:"middle" }} />}
-                        {line.category !== "General" ? line.category : ""}
-                      </td>
-                      <td><code className="rh-cmd">{line.cmd}</code></td>
-                    </tr>
-                  );
-                })}
+                const isHR = RH_HIGH_RISK.has(line.category);
+                const catClr = isHR ? "#dc2626" : line.category !== "General" ? "#6366f1" : "#9ca3af";
+                return (
+                  <tr key={line.no} className={line.suspicious ? "rh-row-susp" : ""}>
+                    <td className="rh-td-lineno">{line.no}</td>
+                    <td className="rh-td-ts">{line.ts || "—"}</td>
+                    <td className="rh-td-cat" style={{ color: catClr }}>
+                      {isHR && <AlertTriangle size={10} style={{ marginRight: 3, verticalAlign: "middle" }} />}
+                      {line.category !== "General" ? line.category : ""}
+                    </td>
+                    <td><code className="rh-cmd">{line.cmd}</code></td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>
@@ -1952,7 +1954,7 @@ function BashRawView({ rawEvents, dateRangeMs }) {
 // ── Bash History section (Analysis + Raw sub-tabs) ────────────────────────────
 function BashHistorySection({ events, dateRangeMs }) {
   const [view, setView] = useState("analysis");
-  const bashEvs   = events.filter(e => e.source === "bash_history");
+  const bashEvs = events.filter(e => e.source === "bash_history");
   const rawEvents = bashEvs.filter(e => e.event_type === "bash_history_raw");
   const totalCmds = rawEvents.reduce((s, e) => s + (e.data?.lines?.length || 0), 0);
 
@@ -1986,7 +1988,7 @@ function BashHistorySection({ events, dateRangeMs }) {
         </button>
       </div>
       {view === "analysis" && <BashAnalysisView events={bashEvs} dateRangeMs={dateRangeMs} />}
-      {view === "raw"      && <BashRawView rawEvents={rawEvents} dateRangeMs={dateRangeMs} />}
+      {view === "raw" && <BashRawView rawEvents={rawEvents} dateRangeMs={dateRangeMs} />}
     </div>
   );
 }
@@ -2003,8 +2005,8 @@ function LogSection({ title, sources, events }) {
   if (!logEvs.length)
     return (
       <div className="log-section-empty">
-        <Server size={32} strokeWidth={1.2} style={{ color:"#d1d5db", marginBottom:8 }} />
-        <p style={{ color:"#9ca3af", fontSize:13 }}>No {title} events in this image.</p>
+        <Server size={32} strokeWidth={1.2} style={{ color: "#d1d5db", marginBottom: 8 }} />
+        <p style={{ color: "#9ca3af", fontSize: 13 }}>No {title} events in this image.</p>
       </div>
     );
 
@@ -2012,7 +2014,7 @@ function LogSection({ title, sources, events }) {
     <div className="log-section">
       <div className="log-section-toolbar">
         <div className="log-stats">
-          {Object.entries(sevCounts).filter(([,v]) => v > 0).map(([sev, cnt]) => (
+          {Object.entries(sevCounts).filter(([, v]) => v > 0).map(([sev, cnt]) => (
             <span key={sev} className="log-stat-badge"
               style={{ background: SEV_BG[sev] || "#f3f4f6", color: SEV_COLOR[sev] || "#6b7280" }}>
               {cnt} {sev}
@@ -2038,15 +2040,15 @@ function TimelineTab({ events = [], dateRangeMs }) {
 
   // Count significant events per source for nav badges
   const bashHigh = events.filter(e => e.source === "bash_history" && (e.severity === "high" || e.severity === "critical")).length;
-  const authEvs  = events.filter(e => ["auth.log","secure"].includes(e.source));
-  const sysEvs   = events.filter(e => ["syslog","messages"].includes(e.source));
+  const authEvs = events.filter(e => ["auth.log", "secure"].includes(e.source));
+  const sysEvs = events.filter(e => ["syslog", "messages"].includes(e.source));
   const authHigh = authEvs.filter(e => e.severity === "high" || e.severity === "critical").length;
-  const sysHigh  = sysEvs.filter(e => e.severity === "high" || e.severity === "critical").length;
+  const sysHigh = sysEvs.filter(e => e.severity === "high" || e.severity === "critical").length;
 
   const srcNav = [
-    { id: "bash",  label: "Bash History", Icon: Terminal, badge: bashHigh },
-    { id: "auth",  label: "Auth Log",     Icon: Lock,     badge: authHigh, count: authEvs.length },
-    { id: "syslog",label: "System Log",   Icon: Server,   badge: sysHigh,  count: sysEvs.length },
+    { id: "bash", label: "Bash History", Icon: Terminal, badge: bashHigh },
+    { id: "auth", label: "Auth Log", Icon: Lock, badge: authHigh, count: authEvs.length },
+    { id: "syslog", label: "System Log", Icon: Server, badge: sysHigh, count: sysEvs.length },
   ];
 
   return (
@@ -2067,9 +2069,9 @@ function TimelineTab({ events = [], dateRangeMs }) {
 
       {/* Content area */}
       <div className="tl-src-content">
-        {source === "bash"   && <BashHistorySection events={events} dateRangeMs={dateRangeMs} />}
-        {source === "auth"   && <LogSection title="Auth Log"    sources={["auth.log","secure"]}   events={events} />}
-        {source === "syslog" && <LogSection title="System Log"  sources={["syslog","messages"]}   events={events} />}
+        {source === "bash" && <BashHistorySection events={events} dateRangeMs={dateRangeMs} />}
+        {source === "auth" && <LogSection title="Auth Log" sources={["auth.log", "secure"]} events={events} />}
+        {source === "syslog" && <LogSection title="System Log" sources={["syslog", "messages"]} events={events} />}
       </div>
     </div>
   );
@@ -2082,7 +2084,7 @@ function parseDateToMs(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     if (value > 1e15) return Math.floor(value / 1000); // ns -> ms
     if (value > 1e12) return Math.floor(value);         // ms epoch
-    if (value > 1e9)  return Math.floor(value * 1000);  // s epoch
+    if (value > 1e9) return Math.floor(value * 1000);  // s epoch
     return null;
   }
 
@@ -2175,14 +2177,14 @@ function filterBrowsersByDateRange(browsers, range) {
     .map((profile) => {
       const next = {
         ...profile,
-        history:      filterByDateRange(profile.history || [], getBrowserRowTimestampMs, range),
-        downloads:    filterByDateRange(profile.downloads || [], getBrowserRowTimestampMs, range),
-        bookmarks:    filterByDateRange(profile.bookmarks || [], getBrowserRowTimestampMs, range),
-        cookies:      filterByDateRange(profile.cookies || [], getBrowserRowTimestampMs, range),
-        extensions:   filterByDateRange(profile.extensions || [], getBrowserRowTimestampMs, range),
-        logins:       filterByDateRange(profile.logins || [], getBrowserRowTimestampMs, range),
+        history: filterByDateRange(profile.history || [], getBrowserRowTimestampMs, range),
+        downloads: filterByDateRange(profile.downloads || [], getBrowserRowTimestampMs, range),
+        bookmarks: filterByDateRange(profile.bookmarks || [], getBrowserRowTimestampMs, range),
+        cookies: filterByDateRange(profile.cookies || [], getBrowserRowTimestampMs, range),
+        extensions: filterByDateRange(profile.extensions || [], getBrowserRowTimestampMs, range),
+        logins: filterByDateRange(profile.logins || [], getBrowserRowTimestampMs, range),
         search_terms: filterByDateRange(profile.search_terms || [], getBrowserRowTimestampMs, range),
-        autofill:     filterByDateRange(profile.autofill || [], getBrowserRowTimestampMs, range),
+        autofill: filterByDateRange(profile.autofill || [], getBrowserRowTimestampMs, range),
       };
 
       const total =
@@ -2314,9 +2316,9 @@ function RecentActivitiesTab({ activities = [] }) {
 
 function fmtBytes(n) {
   if (n == null || n <= 0) return null;
-  if (n < 1024)        return `${n} B`;
-  if (n < 1048576)     return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1073741824)  return `${(n / 1048576).toFixed(1)} MB`;
+  if (n < 1024) return `${n} B`;
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`;
   return `${(n / 1073741824).toFixed(1)} GB`;
 }
 
@@ -2328,8 +2330,8 @@ function RecoverButton({ finding, imgPath }) {
     setStatus("busy");
     try {
       const r = await apiRecover(imgPath, finding.recovery_id);
-      if (r.success) { setStatus("ok");  setResult(r); }
-      else           { setStatus("err"); setResult(r); }
+      if (r.success) { setStatus("ok"); setResult(r); }
+      else { setStatus("err"); setResult(r); }
     } catch (e) {
       setStatus("err");
       setResult({ error: e.message });
@@ -2367,8 +2369,8 @@ function DelRow({ f, imgPath }) {
         <code className="del-path">{f.path}</code>
         <div className="del-row2-meta">
           {f.size != null && <span className="del-chip del-size">{fmtBytes(f.size)}</span>}
-          {f.inode   != null && <span className="del-chip del-inode">ino:{f.inode}</span>}
-          {f.deleted_at      && <span className="del-chip del-ts">{f.deleted_at}</span>}
+          {f.inode != null && <span className="del-chip del-inode">ino:{f.inode}</span>}
+          {f.deleted_at && <span className="del-chip del-ts">{f.deleted_at}</span>}
           <SevBadge sev={sev} />
           {f.recoverable && imgPath
             ? <RecoverButton finding={f} imgPath={imgPath} />
@@ -2402,26 +2404,26 @@ function DelRow({ f, imgPath }) {
 // ── File Carving Panel ────────────────────────────────────────────────────────
 
 const CARVE_GROUP_ICONS = {
-  image:      HardDrive,
-  document:   FileText,
+  image: HardDrive,
+  document: FileText,
   executable: Terminal,
-  database:   Database,
-  archive:    Package,
-  email:      BookOpen,
-  video:      Activity,
-  audio:      Activity,
-  text:       Code,
+  database: Database,
+  archive: Package,
+  email: BookOpen,
+  video: Activity,
+  audio: Activity,
+  text: Code,
 };
 
 function CarvingPanel({ imgPath }) {
-  const [groups,     setGroups]     = useState(null);    // {id: label} map from API
-  const [selected,   setSelected]   = useState([]);       // group keys chosen by user
-  const [maxFiles,   setMaxFiles]   = useState(200);
-  const [maxScanGb,  setMaxScanGb]  = useState(2);
-  const [outDir,     setOutDir]     = useState("");
-  const [status,     setStatus]     = useState("idle");   // idle|loading-groups|carving|done|err
-  const [results,    setResults]    = useState(null);
-  const [error,      setError]      = useState("");
+  const [groups, setGroups] = useState(null);    // {id: label} map from API
+  const [selected, setSelected] = useState([]);       // group keys chosen by user
+  const [maxFiles, setMaxFiles] = useState(200);
+  const [maxScanGb, setMaxScanGb] = useState(2);
+  const [outDir, setOutDir] = useState("");
+  const [status, setStatus] = useState("idle");   // idle|loading-groups|carving|done|err
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState("");
 
   // Load group list once
   useEffect(() => {
@@ -2454,7 +2456,7 @@ function CarvingPanel({ imgPath }) {
   };
 
   const carved = results?.carved?.filter(f => f.type === "carved") ?? [];
-  const info   = results?.carved?.filter(f => f.type !== "carved") ?? [];
+  const info = results?.carved?.filter(f => f.type !== "carved") ?? [];
 
   return (
     <div className="carve-panel">
@@ -2560,7 +2562,7 @@ function CarvingPanel({ imgPath }) {
               </thead>
               <tbody>
                 {carved.map((f, i) => {
-                  const offset = f.inode != null ? `0x${f.inode.toString(16).padStart(8,"0")}` : "—";
+                  const offset = f.inode != null ? `0x${f.inode.toString(16).padStart(8, "0")}` : "—";
                   const fname = f.path.split("/").pop();
                   return (
                     <tr key={i}>
@@ -2586,24 +2588,24 @@ function CarvingPanel({ imgPath }) {
 }
 
 function DeletedTab({ findings = [], imgPath }) {
-  const [search,      setSearch]      = useState("");
-  const [filterSev,   setFilterSev]   = useState("all");
-  const [filterType,  setFilterType]  = useState("all");
-  const [recOnly,     setRecOnly]     = useState(false);
+  const [search, setSearch] = useState("");
+  const [filterSev, setFilterSev] = useState("all");
+  const [filterType, setFilterType] = useState("all");
+  const [recOnly, setRecOnly] = useState(false);
 
   // Determine if we have a disk image (not live root) — carving only makes sense then
   const isImage = imgPath && imgPath !== "/" && !imgPath.endsWith("/");
 
   const types = [...new Set(findings.map(f => f.type))];
   const filtered = findings.filter(f => {
-    if (filterSev  !== "all" && f.severity !== filterSev)  return false;
-    if (filterType !== "all" && f.type     !== filterType)  return false;
-    if (recOnly && !f.recoverable)                          return false;
+    if (filterSev !== "all" && f.severity !== filterSev) return false;
+    if (filterType !== "all" && f.type !== filterType) return false;
+    if (recOnly && !f.recoverable) return false;
     if (search) {
       const q = search.toLowerCase();
       return (f.path?.toLowerCase().includes(q) ||
-              f.detail?.toLowerCase().includes(q) ||
-              f.command?.toLowerCase().includes(q));
+        f.detail?.toLowerCase().includes(q) ||
+        f.command?.toLowerCase().includes(q));
     }
     return true;
   });
@@ -2616,7 +2618,7 @@ function DeletedTab({ findings = [], imgPath }) {
   }, {});
 
   const nRecoverable = findings.filter(f => f.recoverable).length;
-  const nHigh        = findings.filter(f => f.severity === "high").length;
+  const nHigh = findings.filter(f => f.severity === "high").length;
 
   return (
     <div className="tab-content">
@@ -2729,31 +2731,31 @@ function EvidenceLocker({ report }) {
 
   return (
     <div className="tab-content">
-      <div className="lsd-intro" style={{marginBottom: 20}}>
-        <div className="tails-head-title" style={{fontSize: 18, fontWeight: 700, color: "var(--fg)"}}><Package size={18} /> Central Evidence Repository</div>
+      <div className="lsd-intro" style={{ marginBottom: 20 }}>
+        <div className="tails-head-title" style={{ fontSize: 18, fontWeight: 700, color: "var(--fg)" }}><Package size={18} /> Central Evidence Repository</div>
       </div>
-      <div className="sa-audit-card" style={{padding: 0}}>
+      <div className="sa-audit-card" style={{ padding: 0 }}>
         <div className="sc-table-wrap">
           <table className="sc-table">
             <thead>
               <tr>
-                <th style={{width: 120}}>Category</th>
-                <th style={{width: 80}}>Risk</th>
+                <th style={{ width: 120 }}>Category</th>
+                <th style={{ width: 80 }}>Risk</th>
                 <th>Preserved Finding / Artifact</th>
               </tr>
             </thead>
             <tbody>
               {findings.map((f, i) => (
                 <tr key={i}>
-                  <td style={{verticalAlign: "middle"}}>
-                    <div style={{display: "flex", alignItems: "center", gap: 6, fontWeight: 600}}>
-                      <f.Icon size={12} style={{color: "var(--accent-purp)"}} /> {f.type}
+                  <td style={{ verticalAlign: "middle" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                      <f.Icon size={12} style={{ color: "var(--accent-purp)" }} /> {f.type}
                     </div>
                   </td>
-                  <td style={{verticalAlign: "middle"}}><SevBadge sev={f.severity} /></td>
+                  <td style={{ verticalAlign: "middle" }}><SevBadge sev={f.severity} /></td>
                   <td>
-                    <div style={{fontWeight: 700, marginBottom: 2}}>{f.detail || f.tool}</div>
-                    <code className="del-path" style={{fontSize: 10, opacity: 0.8}}>{f.source || f.config || f.path || "System Level"}</code>
+                    <div style={{ fontWeight: 700, marginBottom: 2 }}>{f.detail || f.tool}</div>
+                    <code className="del-path" style={{ fontSize: 10, opacity: 0.8 }}>{f.source || f.config || f.path || "System Level"}</code>
                   </td>
                 </tr>
               ))}
@@ -2769,19 +2771,19 @@ function EvidenceLocker({ report }) {
 
 // Config analyser labels and icons per config file / group
 const CFG_FILE_META = {
-  sshd_config:  { label: "SSH Server (sshd_config)", Icon: Key },
-  sudoers:      { label: "sudo (sudoers)",            Icon: Shield },
-  iptables:     { label: "IPTables / Firewall",       Icon: Wifi },
-  ufw:          { label: "UFW Firewall",              Icon: Wifi },
-  "pam.d":      { label: "PAM Configuration",         Icon: Lock },
-  "sysctl.conf":{ label: "Kernel Parameters (sysctl)",Icon: Cpu  },
-  "login.defs": { label: "Password Policy",           Icon: Users },
-  "/etc/hosts": { label: "/etc/hosts",                Icon: Globe },
-  "resolv.conf":{ label: "DNS (resolv.conf)",         Icon: Globe },
-  apparmor:     { label: "AppArmor",                  Icon: Shield },
-  selinux:      { label: "SELinux",                   Icon: Shield },
-  MAC:          { label: "Mandatory Access Control",  Icon: Shield },
-  network:      { label: "Network Interfaces",        Icon: Wifi },
+  sshd_config: { label: "SSH Server (sshd_config)", Icon: Key },
+  sudoers: { label: "sudo (sudoers)", Icon: Shield },
+  iptables: { label: "IPTables / Firewall", Icon: Wifi },
+  ufw: { label: "UFW Firewall", Icon: Wifi },
+  "pam.d": { label: "PAM Configuration", Icon: Lock },
+  "sysctl.conf": { label: "Kernel Parameters (sysctl)", Icon: Cpu },
+  "login.defs": { label: "Password Policy", Icon: Users },
+  "/etc/hosts": { label: "/etc/hosts", Icon: Globe },
+  "resolv.conf": { label: "DNS (resolv.conf)", Icon: Globe },
+  apparmor: { label: "AppArmor", Icon: Shield },
+  selinux: { label: "SELinux", Icon: Shield },
+  MAC: { label: "Mandatory Access Control", Icon: Shield },
+  network: { label: "Network Interfaces", Icon: Wifi },
 };
 
 const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -2815,10 +2817,10 @@ function ConfigGroup({ configKey, findings }) {
   const [collapsed, setCollapsed] = useState(false);
   const meta = CFG_FILE_META[configKey] || { label: configKey, Icon: FileText };
   const { Icon } = meta;
-  const critCount  = findings.filter(f => f.severity === "critical").length;
-  const highCount  = findings.filter(f => f.severity === "high").length;
-  const warnCount  = findings.filter(f => f.severity === "medium").length;
-  const topSev     = critCount ? "critical" : highCount ? "high" : warnCount ? "medium" : "info";
+  const critCount = findings.filter(f => f.severity === "critical").length;
+  const highCount = findings.filter(f => f.severity === "high").length;
+  const warnCount = findings.filter(f => f.severity === "medium").length;
+  const topSev = critCount ? "critical" : highCount ? "high" : warnCount ? "medium" : "info";
   const alertCount = critCount + highCount;
 
   return (
@@ -2858,7 +2860,7 @@ function SecurityAuditDashboard({ findings }) {
         <div className="sa-score-label" style={{ color: scoreColor }}>{statusLabel} Safety Score</div>
         <div className="ws-sub" style={{ margin: 0, fontSize: 13 }}>System hardening analysis completed. {total} total findings.</div>
       </div>
-      
+
       <div className="sa-audit-grid">
         <div className="sa-audit-card">
           <div className="sa-audit-header">
@@ -2872,7 +2874,7 @@ function SecurityAuditDashboard({ findings }) {
             </div>
           ))}
         </div>
-        
+
         <div className="sa-audit-card">
           <div className="sa-audit-header">
             <Shield size={16} style={{ color: "var(--accent)" }} />
@@ -2903,8 +2905,8 @@ function ConfigTab({ findings = [] }) {
     if (search) {
       const q = search.toLowerCase();
       return f.detail.toLowerCase().includes(q)
-          || (f.config || "").toLowerCase().includes(q)
-          || (f.category || "").toLowerCase().includes(q);
+        || (f.config || "").toLowerCase().includes(q)
+        || (f.category || "").toLowerCase().includes(q);
     }
     return true;
   });
@@ -2923,22 +2925,22 @@ function ConfigTab({ findings = [] }) {
   });
 
   const SEV_FILTERS = [
-    { id: "all",      label: "All" },
+    { id: "all", label: "All" },
     { id: "critical", label: "Critical", color: SEV_COLOR.critical },
-    { id: "high",     label: "High",     color: SEV_COLOR.high     },
-    { id: "medium",   label: "Medium",   color: SEV_COLOR.medium   },
-    { id: "low",      label: "Low",      color: SEV_COLOR.low      },
-    { id: "info",     label: "Info",     color: "#6b7280"          },
+    { id: "high", label: "High", color: SEV_COLOR.high },
+    { id: "medium", label: "Medium", color: SEV_COLOR.medium },
+    { id: "low", label: "Low", color: SEV_COLOR.low },
+    { id: "info", label: "Info", color: "#6b7280" },
   ];
 
   return (
     <div className="tab-content">
-      <div className="lsd-intro" style={{marginBottom: 20, justifyContent: "space-between"}}>
-        <div style={{display: "flex", alignItems: "center", gap: 8}}>
+      <div className="lsd-intro" style={{ marginBottom: 20, justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Settings size={18} />
-          <div className="tails-head-title" style={{fontSize: 18, fontWeight: 700, color: "var(--fg)"}}>Security Architecture Audit</div>
+          <div className="tails-head-title" style={{ fontSize: 18, fontWeight: 700, color: "var(--fg)" }}>Security Architecture Audit</div>
         </div>
-        
+
         <div className="explorer-mode-toggle">
           <button className={`mode-toggle-btn ${viewMode === 'dashboard' ? 'active' : ''}`} onClick={() => setViewMode('dashboard')} title="Dashboard View"><LayoutPanelLeft size={11} /></button>
           <button className={`mode-toggle-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')} title="Detailed List"><List size={11} /></button>
@@ -2960,13 +2962,13 @@ function ConfigTab({ findings = [] }) {
                 </button>
               ))}
             </div>
-            <div className="del-search-wrap" style={{maxWidth: 300, marginLeft: "auto"}}>
+            <div className="del-search-wrap" style={{ maxWidth: 300, marginLeft: "auto" }}>
               <Search size={12} className="del-search-icon" />
               <input className="del-search" placeholder="Search..." value={search}
                 onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
-          <div className="cfg-list" style={{marginTop: 20}}>
+          <div className="cfg-list" style={{ marginTop: 20 }}>
             {filtered.length === 0 ? (
               <EmptyState icon={CheckCircle} message="No findings match the current filter." />
             ) : (
@@ -2984,50 +2986,50 @@ function ConfigTab({ findings = [] }) {
 // ─── Services Tab ─────────────────────────────────────────────────────────────
 
 const SVC_CAT_META = {
-  web_server:    { label: "Web Server",    Icon: Globe          },
-  ftp_server:    { label: "FTP Server",    Icon: FolderOpenIcon },
-  database:      { label: "Database",      Icon: Database       },
-  mail:          { label: "Mail",          Icon: Package        },
-  dns:           { label: "DNS",           Icon: Wifi           },
-  dhcp:          { label: "DHCP",          Icon: Wifi           },
-  ssh:           { label: "SSH",           Icon: Terminal       },
-  remote_access: { label: "Remote Access", Icon: Cpu            },
-  file_sharing:  { label: "File Sharing",  Icon: FolderOpenIcon },
-  vpn:           { label: "VPN",           Icon: Lock           },
-  container:     { label: "Container",     Icon: Box            },
-  proxy:         { label: "Proxy",         Icon: Server         },
-  monitoring:    { label: "Monitoring",    Icon: BarChart2      },
-  security:      { label: "Security",      Icon: Shield         },
-  crypto_mining: { label: "Crypto Mining", Icon: AlertTriangle  },
-  system:        { label: "System",        Icon: Settings       },
-  other:         { label: "Other",         Icon: Package        },
+  web_server: { label: "Web Server", Icon: Globe },
+  ftp_server: { label: "FTP Server", Icon: FolderOpenIcon },
+  database: { label: "Database", Icon: Database },
+  mail: { label: "Mail", Icon: Package },
+  dns: { label: "DNS", Icon: Wifi },
+  dhcp: { label: "DHCP", Icon: Wifi },
+  ssh: { label: "SSH", Icon: Terminal },
+  remote_access: { label: "Remote Access", Icon: Cpu },
+  file_sharing: { label: "File Sharing", Icon: FolderOpenIcon },
+  vpn: { label: "VPN", Icon: Lock },
+  container: { label: "Container", Icon: Box },
+  proxy: { label: "Proxy", Icon: Server },
+  monitoring: { label: "Monitoring", Icon: BarChart2 },
+  security: { label: "Security", Icon: Shield },
+  crypto_mining: { label: "Crypto Mining", Icon: AlertTriangle },
+  system: { label: "System", Icon: Settings },
+  other: { label: "Other", Icon: Package },
 };
 
 const SVC_STATE_COLOR = {
-  enabled:  { bg: "#dcfce7", color: "#166534", border: "#bbf7d0" },
+  enabled: { bg: "#dcfce7", color: "#166534", border: "#bbf7d0" },
   disabled: { bg: "#f1f5f9", color: "#64748b", border: "#e2e8f0" },
-  masked:   { bg: "#fef2f2", color: "#991b1b", border: "#fecaca" },
-  static:   { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
+  masked: { bg: "#fef2f2", color: "#991b1b", border: "#fecaca" },
+  static: { bg: "#eff6ff", color: "#1d4ed8", border: "#bfdbfe" },
   indirect: { bg: "#f0fdfa", color: "#0f766e", border: "#99f6e4" },
   detected: { bg: "#fff7ed", color: "#92400e", border: "#fed7aa" },
 };
 
 const SVC_FLAG_LABELS = {
-  "unusual-exec-path":    "Unusual exec path",
-  "shell-exec":           "Shell exec",
-  "root-exec":            "Runs as root",
+  "unusual-exec-path": "Unusual exec path",
+  "shell-exec": "Shell exec",
+  "root-exec": "Runs as root",
   "unencrypted-protocol": "Unencrypted protocol",
-  "deprecated-protocol":  "Deprecated protocol",
-  "crypto-miner":         "Possible crypto miner",
-  "potential-no-auth":    "Potential no-auth",
-  "config-only":          "Config file only",
-  "masked":               "Masked",
+  "deprecated-protocol": "Deprecated protocol",
+  "crypto-miner": "Possible crypto miner",
+  "potential-no-auth": "Potential no-auth",
+  "config-only": "Config file only",
+  "masked": "Masked",
 };
 
 function ServiceRow({ svc }) {
   const [open, setOpen] = useState(false);
-  const meta     = SVC_CAT_META[svc.category] || SVC_CAT_META.other;
-  const CatIcon  = meta.Icon;
+  const meta = SVC_CAT_META[svc.category] || SVC_CAT_META.other;
+  const CatIcon = meta.Icon;
   const stateSty = SVC_STATE_COLOR[svc.state] || SVC_STATE_COLOR.disabled;
   const sevColor = SEV_COLOR[svc.severity] || "#6b7280";
   const hasDetail = svc.description || svc.exec_start || svc.unit_path || svc.flags?.length > 0;
@@ -3087,8 +3089,8 @@ function ServiceRow({ svc }) {
                   style={f === "unusual-exec-path" || f === "deprecated-protocol" || f === "crypto-miner"
                     ? { background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca" }
                     : f === "unencrypted-protocol" || f === "shell-exec"
-                    ? { background: "#fff7ed", color: "#92400e", border: "1px solid #fed7aa" }
-                    : {}}>
+                      ? { background: "#fff7ed", color: "#92400e", border: "1px solid #fed7aa" }
+                      : {}}>
                   {SVC_FLAG_LABELS[f] || f}
                 </span>
               ))}
@@ -3102,30 +3104,30 @@ function ServiceRow({ svc }) {
 
 function ServicesTab({ services = [] }) {
   const [stateFilter, setStateFilter] = useState("all");
-  const [catFilter,   setCatFilter]   = useState("all");
-  const [sevFilter,   setSevFilter]   = useState("all");
-  const [search,      setSearch]      = useState("");
+  const [catFilter, setCatFilter] = useState("all");
+  const [sevFilter, setSevFilter] = useState("all");
+  const [search, setSearch] = useState("");
 
   if (services.length === 0)
     return <EmptyState icon={Server} message="No services detected." />;
 
   const filtered = services.filter(s => {
-    if (stateFilter !== "all" && s.state   !== stateFilter) return false;
-    if (catFilter   !== "all" && s.category !== catFilter)  return false;
-    if (sevFilter   !== "all" && s.severity !== sevFilter)  return false;
+    if (stateFilter !== "all" && s.state !== stateFilter) return false;
+    if (catFilter !== "all" && s.category !== catFilter) return false;
+    if (sevFilter !== "all" && s.severity !== sevFilter) return false;
     if (search) {
       const q = search.toLowerCase();
       return s.name.toLowerCase().includes(q)
-          || (s.display_name || "").toLowerCase().includes(q)
-          || (s.description  || "").toLowerCase().includes(q)
-          || (s.exec_start   || "").toLowerCase().includes(q);
+        || (s.display_name || "").toLowerCase().includes(q)
+        || (s.description || "").toLowerCase().includes(q)
+        || (s.exec_start || "").toLowerCase().includes(q);
     }
     return true;
   });
 
-  const enabledCount = services.filter(s => s.state    === "enabled").length;
-  const critCount    = services.filter(s => s.severity === "critical").length;
-  const highCount    = services.filter(s => s.severity === "high").length;
+  const enabledCount = services.filter(s => s.state === "enabled").length;
+  const critCount = services.filter(s => s.severity === "critical").length;
+  const highCount = services.filter(s => s.severity === "high").length;
 
   const catCounts = services.reduce((acc, s) => {
     acc[s.category] = (acc[s.category] || 0) + 1;
@@ -3134,21 +3136,21 @@ function ServicesTab({ services = [] }) {
   const presentCats = Object.keys(catCounts).sort();
 
   const STATE_FILTERS = [
-    { id: "all",      label: "All"      },
-    { id: "enabled",  label: "Enabled"  },
+    { id: "all", label: "All" },
+    { id: "enabled", label: "Enabled" },
     { id: "disabled", label: "Disabled" },
-    { id: "static",   label: "Static"   },
-    { id: "masked",   label: "Masked"   },
+    { id: "static", label: "Static" },
+    { id: "masked", label: "Masked" },
     { id: "detected", label: "Detected" },
   ].filter(f => f.id === "all" || services.some(s => s.state === f.id));
 
   const SEV_FILTERS = [
-    { id: "all",      label: "All"      },
+    { id: "all", label: "All" },
     { id: "critical", label: "Critical" },
-    { id: "high",     label: "High"     },
-    { id: "medium",   label: "Medium"   },
-    { id: "low",      label: "Low"      },
-    { id: "info",     label: "Info"     },
+    { id: "high", label: "High" },
+    { id: "medium", label: "Medium" },
+    { id: "low", label: "Low" },
+    { id: "info", label: "Info" },
   ].filter(f => f.id === "all" || services.some(s => s.severity === f.id));
 
   return (
@@ -3229,59 +3231,59 @@ function ServicesTab({ services = [] }) {
 // ─── Browser Forensics Tab ────────────────────────────────────────────────────
 
 const BROWSER_META = {
-  chrome:    { label: "Google Chrome",  color: "#4285f4" },
-  chromium:  { label: "Chromium",       color: "#2563eb" },
-  brave:     { label: "Brave",          color: "#fb542b" },
-  edge:      { label: "Microsoft Edge", color: "#0078d4" },
-  opera:     { label: "Opera",          color: "#ff1b2d" },
-  vivaldi:   { label: "Vivaldi",        color: "#ef3939" },
-  yandex:    { label: "Yandex",         color: "#ffcc00" },
-  firefox:   { label: "Firefox",        color: "#ff9500" },
-  waterfox:  { label: "Waterfox",       color: "#00acda" },
-  librewolf: { label: "LibreWolf",      color: "#00adef" },
-  icecat:    { label: "GNU IceCat",     color: "#5b9bd5" },
-  tor:       { label: "Tor Browser",    color: "#7d4698" },
+  chrome: { label: "Google Chrome", color: "#4285f4" },
+  chromium: { label: "Chromium", color: "#2563eb" },
+  brave: { label: "Brave", color: "#fb542b" },
+  edge: { label: "Microsoft Edge", color: "#0078d4" },
+  opera: { label: "Opera", color: "#ff1b2d" },
+  vivaldi: { label: "Vivaldi", color: "#ef3939" },
+  yandex: { label: "Yandex", color: "#ffcc00" },
+  firefox: { label: "Firefox", color: "#ff9500" },
+  waterfox: { label: "Waterfox", color: "#00acda" },
+  librewolf: { label: "LibreWolf", color: "#00adef" },
+  icecat: { label: "GNU IceCat", color: "#5b9bd5" },
+  tor: { label: "Tor Browser", color: "#7d4698" },
 };
 
 const BW_ARTIFACT_TABS = [
-  { id: "history",      label: "History",     emptyMsg: "No history found."      },
-  { id: "downloads",    label: "Downloads",   emptyMsg: "No downloads found."    },
-  { id: "bookmarks",    label: "Bookmarks",   emptyMsg: "No bookmarks found."    },
-  { id: "cookies",      label: "Cookies",     emptyMsg: "No cookies found."      },
-  { id: "extensions",   label: "Extensions",  emptyMsg: "No extensions found."   },
-  { id: "logins",       label: "Logins",      emptyMsg: "No saved logins found." },
-  { id: "search_terms", label: "Searches",    emptyMsg: "No search terms found." },
-  { id: "autofill",     label: "Autofill",    emptyMsg: "No autofill data found."},
+  { id: "history", label: "History", emptyMsg: "No history found." },
+  { id: "downloads", label: "Downloads", emptyMsg: "No downloads found." },
+  { id: "bookmarks", label: "Bookmarks", emptyMsg: "No bookmarks found." },
+  { id: "cookies", label: "Cookies", emptyMsg: "No cookies found." },
+  { id: "extensions", label: "Extensions", emptyMsg: "No extensions found." },
+  { id: "logins", label: "Logins", emptyMsg: "No saved logins found." },
+  { id: "search_terms", label: "Searches", emptyMsg: "No search terms found." },
+  { id: "autofill", label: "Autofill", emptyMsg: "No autofill data found." },
 ];
 
 const BW_FLAG_LABELS = {
-  "saved-passwords":      "Saved passwords",
+  "saved-passwords": "Saved passwords",
   "suspicious-downloads": "Suspicious downloads",
-  "suspicious-history":   "Suspicious history",
-  "suspicious-extensions":"Suspicious extensions",
-  "suspicious-searches":  "Suspicious searches",
-  "wiped-history":        "History wiped",
-  "credential-store":     "Credential store present",
-  "saved-credentials":    "Saved credentials",
-  "executable":           "Executable file",
-  "suspicious-url":       "Suspicious URL",
-  "suspicious-search":    "Suspicious search",
-  "not-secure":           "Non-secure flag",
-  "not-httponly":         "Missing HttpOnly",
-  "unsigned":             "Unsigned extension",
+  "suspicious-history": "Suspicious history",
+  "suspicious-extensions": "Suspicious extensions",
+  "suspicious-searches": "Suspicious searches",
+  "wiped-history": "History wiped",
+  "credential-store": "Credential store present",
+  "saved-credentials": "Saved credentials",
+  "executable": "Executable file",
+  "suspicious-url": "Suspicious URL",
+  "suspicious-search": "Suspicious search",
+  "not-secure": "Non-secure flag",
+  "not-httponly": "Missing HttpOnly",
+  "unsigned": "Unsigned extension",
 };
 
 function BwFlagChip({ flag }) {
   const label = BW_FLAG_LABELS[flag] || flag.replace(/^perm:/, "perm: ");
-  const isHigh = ["saved-passwords","saved-credentials","suspicious-searches","suspicious-extensions","wiped-history"].includes(flag)
-    || flag.startsWith("perm:") && ["<all_urls>","*://*/*","webRequestBlocking","proxy","nativeMessaging","debugger","management"].some(p => flag.includes(p));
-  const isMed = ["suspicious-downloads","suspicious-history","suspicious-url","credential-store","executable","unsigned"].includes(flag)
+  const isHigh = ["saved-passwords", "saved-credentials", "suspicious-searches", "suspicious-extensions", "wiped-history"].includes(flag)
+    || flag.startsWith("perm:") && ["<all_urls>", "*://*/*", "webRequestBlocking", "proxy", "nativeMessaging", "debugger", "management"].some(p => flag.includes(p));
+  const isMed = ["suspicious-downloads", "suspicious-history", "suspicious-url", "credential-store", "executable", "unsigned"].includes(flag)
     || flag.startsWith("perm:");
   const style = isHigh
     ? { background: "#fef2f2", color: "#991b1b", border: "1px solid #fecaca" }
     : isMed
-    ? { background: "#fff7ed", color: "#92400e", border: "1px solid #fed7aa" }
-    : { background: "var(--bg-hover)", color: "var(--fg-muted)", border: "1px solid var(--border-lt)" };
+      ? { background: "#fff7ed", color: "#92400e", border: "1px solid #fed7aa" }
+      : { background: "var(--bg-hover)", color: "var(--fg-muted)", border: "1px solid var(--border-lt)" };
   return <span className="bw-flag-chip" style={style}>{label}</span>;
 }
 
@@ -3303,7 +3305,7 @@ function BwHistoryTable({ rows, search }) {
               </td>
               <td className="bw-num">{r.visit_count || "—"}</td>
               <td className="bw-ts">{r.last_visit || "—"}</td>
-              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+              <td>{(r.flags || []).map(f => <BwFlagChip key={f} flag={f} />)}</td>
             </tr>
           ))}
         </tbody>
@@ -3324,9 +3326,9 @@ function BwDownloadsTable({ rows, search }) {
             <tr key={i} className={r.severity !== "info" ? "bw-row-flagged" : ""}>
               <td className="bw-url-cell"><div className="bw-url">{r.url || "—"}</div></td>
               <td className="bw-url-cell"><div className="bw-mono">{r.target_path || "—"}</div></td>
-              <td className="bw-ts">{r.mime_type || "—"}{r.total_bytes > 0 && ` · ${(r.total_bytes/1024).toFixed(0)} KB`}</td>
+              <td className="bw-ts">{r.mime_type || "—"}{r.total_bytes > 0 && ` · ${(r.total_bytes / 1024).toFixed(0)} KB`}</td>
               <td className="bw-ts">{r.start_time || "—"}</td>
-              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+              <td>{(r.flags || []).map(f => <BwFlagChip key={f} flag={f} />)}</td>
             </tr>
           ))}
         </tbody>
@@ -3369,10 +3371,10 @@ function BwCookiesTable({ rows, search }) {
             <tr key={i} className={r.severity !== "info" ? "bw-row-flagged" : ""}>
               <td className="bw-mono">{r.host}</td>
               <td className="bw-mono">{r.name}</td>
-              <td className="bw-center">{r.is_secure ? "✓" : <span style={{color:"#dc2626"}}>✗</span>}</td>
-              <td className="bw-center">{r.is_httponly ? "✓" : <span style={{color:"#dc2626"}}>✗</span>}</td>
+              <td className="bw-center">{r.is_secure ? "✓" : <span style={{ color: "#dc2626" }}>✗</span>}</td>
+              <td className="bw-center">{r.is_httponly ? "✓" : <span style={{ color: "#dc2626" }}>✗</span>}</td>
               <td className="bw-ts">{r.expires || "session"}</td>
-              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+              <td>{(r.flags || []).map(f => <BwFlagChip key={f} flag={f} />)}</td>
             </tr>
           ))}
         </tbody>
@@ -3392,13 +3394,13 @@ function BwExtensionsTable({ rows, search }) {
           {vis.map((r, i) => (
             <tr key={i} className={r.severity !== "info" ? "bw-row-flagged" : ""}>
               <td>
-                <div style={{fontWeight: 600}}>{r.name}</div>
+                <div style={{ fontWeight: 600 }}>{r.name}</div>
                 {r.description && <div className="bw-subtitle">{r.description}</div>}
                 <SevBadge sev={r.severity} />
               </td>
-              <td className="bw-mono" style={{fontSize:10}}>{r.id}</td>
+              <td className="bw-mono" style={{ fontSize: 10 }}>{r.id}</td>
               <td className="bw-ts">{r.version || "—"}</td>
-              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+              <td>{(r.flags || []).map(f => <BwFlagChip key={f} flag={f} />)}</td>
             </tr>
           ))}
         </tbody>
@@ -3439,9 +3441,9 @@ function BwSearchesTable({ rows, search }) {
         <tbody>
           {vis.map((r, i) => (
             <tr key={i} className={r.severity === "high" ? "bw-row-flagged" : ""}>
-              <td style={{fontWeight: r.severity === "high" ? 700 : 400}}>{r.term}</td>
+              <td style={{ fontWeight: r.severity === "high" ? 700 : 400 }}>{r.term}</td>
               <td className="bw-ts">{r.engine || "—"}</td>
-              <td>{(r.flags||[]).map(f => <BwFlagChip key={f} flag={f} />)}</td>
+              <td>{(r.flags || []).map(f => <BwFlagChip key={f} flag={f} />)}</td>
             </tr>
           ))}
         </tbody>
@@ -3477,14 +3479,14 @@ function BrowserProfileView({ profile }) {
 
   const meta = BROWSER_META[profile.browser] || { label: profile.browser_label, color: "#6b7280" };
   const counts = {
-    history:      (profile.history      || []).length,
-    downloads:    (profile.downloads    || []).length,
-    bookmarks:    (profile.bookmarks    || []).length,
-    cookies:      (profile.cookies      || []).length,
-    extensions:   (profile.extensions   || []).length,
-    logins:       (profile.logins       || []).length,
+    history: (profile.history || []).length,
+    downloads: (profile.downloads || []).length,
+    bookmarks: (profile.bookmarks || []).length,
+    cookies: (profile.cookies || []).length,
+    extensions: (profile.extensions || []).length,
+    logins: (profile.logins || []).length,
     search_terms: (profile.search_terms || []).length,
-    autofill:     (profile.autofill     || []).length,
+    autofill: (profile.autofill || []).length,
   };
   const q = search.toLowerCase();
 
@@ -3522,14 +3524,14 @@ function BrowserProfileView({ profile }) {
 
       {/* Table */}
       <div className="bw-artifact-body">
-        {artifactTab === "history"      && (counts.history      > 0 ? <BwHistoryTable    rows={profile.history}      search={q} /> : <div className="bw-empty">No history found.</div>     )}
-        {artifactTab === "downloads"    && (counts.downloads    > 0 ? <BwDownloadsTable  rows={profile.downloads}    search={q} /> : <div className="bw-empty">No downloads found.</div>   )}
-        {artifactTab === "bookmarks"    && (counts.bookmarks    > 0 ? <BwBookmarksTable  rows={profile.bookmarks}    search={q} /> : <div className="bw-empty">No bookmarks found.</div>   )}
-        {artifactTab === "cookies"      && (counts.cookies      > 0 ? <BwCookiesTable    rows={profile.cookies}      search={q} /> : <div className="bw-empty">No cookies found.</div>     )}
-        {artifactTab === "extensions"   && (counts.extensions   > 0 ? <BwExtensionsTable rows={profile.extensions}   search={q} /> : <div className="bw-empty">No extensions found.</div>  )}
-        {artifactTab === "logins"       && (counts.logins       > 0 ? <BwLoginsTable     rows={profile.logins}       search={q} /> : <div className="bw-empty">No saved logins found.</div>)}
-        {artifactTab === "search_terms" && (counts.search_terms > 0 ? <BwSearchesTable   rows={profile.search_terms} search={q} /> : <div className="bw-empty">No search terms found.</div>)}
-        {artifactTab === "autofill"     && (counts.autofill     > 0 ? <BwAutofillTable   rows={profile.autofill}     search={q} /> : <div className="bw-empty">No autofill data found.</div>)}
+        {artifactTab === "history" && (counts.history > 0 ? <BwHistoryTable rows={profile.history} search={q} /> : <div className="bw-empty">No history found.</div>)}
+        {artifactTab === "downloads" && (counts.downloads > 0 ? <BwDownloadsTable rows={profile.downloads} search={q} /> : <div className="bw-empty">No downloads found.</div>)}
+        {artifactTab === "bookmarks" && (counts.bookmarks > 0 ? <BwBookmarksTable rows={profile.bookmarks} search={q} /> : <div className="bw-empty">No bookmarks found.</div>)}
+        {artifactTab === "cookies" && (counts.cookies > 0 ? <BwCookiesTable rows={profile.cookies} search={q} /> : <div className="bw-empty">No cookies found.</div>)}
+        {artifactTab === "extensions" && (counts.extensions > 0 ? <BwExtensionsTable rows={profile.extensions} search={q} /> : <div className="bw-empty">No extensions found.</div>)}
+        {artifactTab === "logins" && (counts.logins > 0 ? <BwLoginsTable rows={profile.logins} search={q} /> : <div className="bw-empty">No saved logins found.</div>)}
+        {artifactTab === "search_terms" && (counts.search_terms > 0 ? <BwSearchesTable rows={profile.search_terms} search={q} /> : <div className="bw-empty">No search terms found.</div>)}
+        {artifactTab === "autofill" && (counts.autofill > 0 ? <BwAutofillTable rows={profile.autofill} search={q} /> : <div className="bw-empty">No autofill data found.</div>)}
       </div>
     </div>
   );
@@ -3543,10 +3545,10 @@ function BrowserTab({ browsers = [] }) {
 
   const cur = browsers[selected] || browsers[0];
 
-  const totalHistory   = browsers.reduce((n, b) => n + (b.history      || []).length, 0);
-  const totalDownloads = browsers.reduce((n, b) => n + (b.downloads    || []).length, 0);
-  const totalLogins    = browsers.reduce((n, b) => n + (b.logins       || []).length, 0);
-  const totalExts      = browsers.reduce((n, b) => n + (b.extensions   || []).length, 0);
+  const totalHistory = browsers.reduce((n, b) => n + (b.history || []).length, 0);
+  const totalDownloads = browsers.reduce((n, b) => n + (b.downloads || []).length, 0);
+  const totalLogins = browsers.reduce((n, b) => n + (b.logins || []).length, 0);
+  const totalExts = browsers.reduce((n, b) => n + (b.extensions || []).length, 0);
 
   return (
     <div className="bw-tab">
@@ -3599,10 +3601,10 @@ function BrowserTab({ browsers = [] }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const MM_TYPE_META = {
-  image: { Icon: Image,  label: "Image",  color: "#7c3aed" },
-  video: { Icon: Film,   label: "Video",  color: "#2563eb" },
-  audio: { Icon: Music,  label: "Audio",  color: "#16a34a" },
-  media: { Icon: Layers, label: "Media",  color: "#6b7280" },
+  image: { Icon: Image, label: "Image", color: "#7c3aed" },
+  video: { Icon: Film, label: "Video", color: "#2563eb" },
+  audio: { Icon: Music, label: "Audio", color: "#16a34a" },
+  media: { Icon: Layers, label: "Media", color: "#6b7280" },
 };
 
 function GpsLink({ gps }) {
@@ -3618,7 +3620,7 @@ function GpsLink({ gps }) {
 
 function MetaTable({ meta }) {
   const SKIP = new Set(["mime_detected", "has_embedded_thumbnail", "gps_lat", "gps_lon",
-                         "gps_maps_url", "gps_alt_m", "width_px", "height_px"]);
+    "gps_maps_url", "gps_alt_m", "width_px", "height_px"]);
   const entries = Object.entries(meta || {}).filter(([k]) => !SKIP.has(k));
   if (!entries.length) return null;
   return (
@@ -3644,7 +3646,7 @@ function StreamsTable({ streams }) {
           {s.type === "video" ? <Film size={10} /> : <Music size={10} />}
           {" "}{s.codec || s.type}
           {s.width && ` ${s.width}×${s.height}`}
-          {s.fps &&   ` @ ${s.fps}`}
+          {s.fps && ` @ ${s.fps}`}
           {s.sample_rate && ` ${s.sample_rate}Hz`}
           {s.channels && ` ${s.channels}ch`}
         </span>
@@ -3658,8 +3660,8 @@ function EmbeddedThumbnail({ thumbnail }) {
   return (
     <div className="mm-thumb-wrap">
       <img src={thumbnail.data_uri} alt="EXIF thumbnail"
-           className="mm-thumb"
-           title={`${thumbnail.width}×${thumbnail.height}`} />
+        className="mm-thumb"
+        title={`${thumbnail.width}×${thumbnail.height}`} />
       <span className="mm-thumb-label">EXIF thumbnail {thumbnail.width}×{thumbnail.height}</span>
     </div>
   );
@@ -3670,12 +3672,12 @@ function MediaViewerModal({ item, imgPath, onClose, onPrev, onNext, hasPrev, has
   const viewUrl = apiMediaUrl(imgPath, item.path);
   const isImage = item.media_type === "image";
   const isVideo = item.media_type === "video";
-  const fname   = item.path.split("/").pop();
+  const fname = item.path.split("/").pop();
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === "Escape")     onClose();
-      if (e.key === "ArrowLeft"  && hasPrev) onPrev();
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowLeft" && hasPrev) onPrev();
       if (e.key === "ArrowRight" && hasNext) onNext();
     };
     document.addEventListener("keydown", handler);
@@ -3759,8 +3761,8 @@ function MediaCard({ item, imgPath, onView }) {
   const fmtSize = (n) => {
     if (!n) return "";
     if (n < 1024) return `${n}B`;
-    if (n < 1024**2) return `${(n/1024).toFixed(1)}KB`;
-    return `${(n/1024**2).toFixed(1)}MB`;
+    if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)}KB`;
+    return `${(n / 1024 ** 2).toFixed(1)}MB`;
   };
 
   return (
@@ -3788,24 +3790,24 @@ function MediaCard({ item, imgPath, onView }) {
 
 function MultimediaTab({ findings = [], imgPath }) {
   const [filterType, setFilterType] = useState("all");
-  const [filterSev,  setFilterSev]  = useState("all");
-  const [search,     setSearch]     = useState("");
-  const [running,    setRunning]    = useState(false);
-  const [err,        setErr]        = useState(null);
+  const [filterSev, setFilterSev] = useState("all");
+  const [search, setSearch] = useState("");
+  const [running, setRunning] = useState(false);
+  const [err, setErr] = useState(null);
   const [localFindings, setLocalFindings] = useState(findings);
-  const [viewItem,   setViewItem]   = useState(null);
-  const [viewMode,   setViewMode]   = useState("grid"); // "grid" | "list"
+  const [viewItem, setViewItem] = useState(null);
+  const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
 
   // Sync when parent report findings change
   useEffect(() => { setLocalFindings(findings); }, [findings]);
 
   const items = (localFindings || []).filter(item => {
     if (filterType !== "all" && item.media_type !== filterType) return false;
-    if (filterSev  !== "all" && item.severity    !== filterSev)  return false;
+    if (filterSev !== "all" && item.severity !== filterSev) return false;
     if (search) {
       const q = search.toLowerCase();
       return item.path?.toLowerCase().includes(q) ||
-             item.findings?.some(f => f.toLowerCase().includes(q));
+        item.findings?.some(f => f.toLowerCase().includes(q));
     }
     return true;
   });
@@ -3840,26 +3842,169 @@ function MultimediaTab({ findings = [], imgPath }) {
             <button className="btn-primary btn-sm" onClick={handleRescan} disabled={running}>
               {running ? "Scanning…" : "Scan for Media Files"}
             </button>
-            {err && <div className="dlg-error" style={{marginTop: 12}}>{err}</div>}
+            {err && <div className="dlg-error" style={{ marginTop: 12 }}>{err}</div>}
           </div>
         )}
       </div>
     );
   }
+}
+// ─── Tools Tab ────────────────────────────────────────────────────────────────
 
+const RISK_LEVELS = {
+  high: { label: "High Risk", color: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+  medium: { label: "Medium Risk", color: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+  low: { label: "Low Risk", color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
+  info: { label: "Info", color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
+};
+
+function ToolsTab({ findings = [] }) {
+  const [search, setSearch] = useState("");
+  const [sevFilter, setSevFilter] = useState("all");
+
+  if (!findings || findings.length === 0)
+    return <EmptyState icon={Search} message="No notable tools or binaries detected." />;
+
+  const filtered = findings.filter(f => {
+    if (sevFilter !== "all" && (f.severity || "info") !== sevFilter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (
+        (f.tool || "").toLowerCase().includes(q) ||
+        (f.detail || "").toLowerCase().includes(q) ||
+        (f.path || "").toLowerCase().includes(q) ||
+        (f.category || "").toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const highCount = findings.filter(f => f.severity === "high" || f.severity === "critical").length;
+  const medCount = findings.filter(f => f.severity === "medium").length;
+
+  const SEV_FILTERS = [
+    { id: "all", label: "All" },
+    { id: "critical", label: "Critical" },
+    { id: "high", label: "High" },
+    { id: "medium", label: "Medium" },
+    { id: "low", label: "Low" },
+    { id: "info", label: "Info" },
+  ].filter(f => f.id === "all" || findings.some(t => (t.severity || "info") === f.id));
+
+  return (
+    <div className="tab-content">
+      {/* Summary bar */}
+      <div className="del-summary-bar">
+        <span className="del-sum-chip neutral"><Search size={11} /> {findings.length} tools detected</span>
+        {highCount > 0 && (
+          <span className="del-sum-chip red"><AlertTriangle size={11} /> {highCount} high risk</span>
+        )}
+        {medCount > 0 && (
+          <span className="del-sum-chip" style={{ background: "#fffbeb", color: "#92400e", border: "1px solid #fde68a" }}>
+            <AlertTriangle size={11} /> {medCount} medium
+          </span>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="del-filter-bar">
+        <div className="cfg-sev-filters">
+          {SEV_FILTERS.map(({ id, label }) => (
+            <button
+              key={id}
+              className={`cfg-sev-filter ${sevFilter === id ? "active" : ""}`}
+              style={sevFilter === id && id !== "all" ? { background: SEV_COLOR[id] || "#6b7280", color: "#fff" } : {}}
+              onClick={() => setSevFilter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="del-search-wrap" style={{ maxWidth: 300, marginLeft: "auto" }}>
+          <Search size={12} className="del-search-icon" />
+          <input
+            className="del-search"
+            placeholder="Search tools, paths, categories…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={CheckCircle} message="No tools match the current filter." />
+      ) : (
+        <div className="cfg-list" style={{ marginTop: 16 }}>
+          {filtered.map((f, i) => {
+            const sev = f.severity || "info";
+            const borderColor = SEV_COLOR[sev] || "#6b7280";
+            const rl = RISK_LEVELS[sev] || RISK_LEVELS.info;
+            return (
+              <div
+                key={i}
+                className="cfg-row"
+                style={{ borderLeft: `3px solid ${borderColor}` }}
+              >
+                <div className="cfg-row-top">
+                  <span style={{ fontWeight: 700, fontFamily: "monospace", fontSize: 13 }}>
+                    {f.tool || f.name || "Unknown"}
+                  </span>
+                  {f.category && (
+                    <span
+                      className="svc-cat-badge"
+                      style={{ marginLeft: 8 }}
+                    >
+                      {f.category}
+                    </span>
+                  )}
+                  <SevBadge sev={sev} />
+                  <span
+                    className="bw-flag-chip"
+                    style={{
+                      background: rl.bg,
+                      color: rl.color,
+                      border: `1px solid ${rl.border}`,
+                      marginLeft: 4,
+                    }}
+                  >
+                    {rl.label}
+                  </span>
+                </div>
+                {f.detail && <div className="cfg-detail">{f.detail}</div>}
+                {f.path && (
+                  <code
+                    className="del-path"
+                    style={{ display: "block", marginTop: 4, fontSize: 11 }}
+                  >
+                    {f.path}
+                  </code>
+                )}
+                {f.version && (
+                  <div style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 2 }}>
+                    Version: {f.version}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 const REPORT_TABS = [
-  { id: "summary",     label: "Summary",     Icon: HardDrive },
-  { id: "timeline",    label: "Timeline",    Icon: Clock     },
-  { id: "recent",      label: "Recent",      Icon: Activity  },
-  { id: "deleted",     label: "Deleted",     Icon: Eye       },
-  { id: "persistence", label: "Persistence", Icon: Shield    },
-  { id: "config",      label: "Config",      Icon: Settings  },
-  { id: "services",    label: "Services",    Icon: Server    },
-  { id: "browsers",    label: "Browsers",    Icon: Globe     },
-  { id: "multimedia",  label: "Multimedia",  Icon: Image     },
-  { id: "tails",       label: "TailsOS",     Icon: Sailboat  },
-  { id: "tools",       label: "Tools",       Icon: Search    },
-  { id: "evidence",    label: "Evidence",    Icon: Package   },
+  { id: "summary", label: "Summary", Icon: HardDrive },
+  { id: "timeline", label: "Timeline", Icon: Clock },
+  { id: "recent", label: "Recent", Icon: Activity },
+  { id: "deleted", label: "Deleted", Icon: Eye },
+  { id: "persistence", label: "Persistence", Icon: Shield },
+  { id: "config", label: "Config", Icon: Settings },
+  { id: "services", label: "Services", Icon: Server },
+  { id: "browsers", label: "Browsers", Icon: Globe },
+  { id: "multimedia", label: "Multimedia", Icon: Image },
+  { id: "tails", label: "TailsOS", Icon: Sailboat },
+  { id: "tools", label: "Tools", Icon: Search },
+  { id: "evidence", label: "Evidence", Icon: Package },
 ];
 
 function ReportPanel({ report, liveInfo, imgPath, onClear, onExport, onReanalyze, reanalyzing }) {
@@ -3923,16 +4068,16 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExport, onReanalyze
   const highTailsFiltered = (report.tails || []).filter((t) => t.severity === "high" || t.severity === "critical").length;
 
   const badge = {
-    timeline:    highTimelineFiltered > 0 ? highTimelineFiltered : null,
-    recent:      recentActivities.length > 0 ? recentActivities.length : null,
-    deleted:     highDeletedFiltered > 0 ? highDeletedFiltered : null,
+    timeline: highTimelineFiltered > 0 ? highTimelineFiltered : null,
+    recent: recentActivities.length > 0 ? recentActivities.length : null,
+    deleted: highDeletedFiltered > 0 ? highDeletedFiltered : null,
     persistence: summary?.high_persistence > 0 ? summary.high_persistence : null,
-    config:      summary?.high_config      > 0 ? summary.high_config      : null,
-    services:    summary?.high_services    > 0 ? summary.high_services    : null,
-    browsers:    highBrowserFiltered > 0 ? highBrowserFiltered : null,
-    multimedia:  highMediaFiltered > 0 ? highMediaFiltered : null,
-    tails:       highTailsFiltered > 0 ? highTailsFiltered : null,
-    tools:       summary?.high_risk_tools  > 0 ? summary.high_risk_tools  : null,
+    config: summary?.high_config > 0 ? summary.high_config : null,
+    services: summary?.high_services > 0 ? summary.high_services : null,
+    browsers: highBrowserFiltered > 0 ? highBrowserFiltered : null,
+    multimedia: highMediaFiltered > 0 ? highMediaFiltered : null,
+    tails: highTailsFiltered > 0 ? highTailsFiltered : null,
+    tools: summary?.high_risk_tools > 0 ? summary.high_risk_tools : null,
   };
   return (
     <div className="report-panel">
@@ -4004,18 +4149,18 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExport, onReanalyze
         )}
       </div>
       <div className="report-panel-body">
-        {tab === "summary"     && <SummaryTab     report={report} liveInfo={liveInfo} />}
-        {tab === "timeline"    && <TimelineTab    events={filteredTimeline} dateRangeMs={rangeMs} />}
-        {tab === "recent"      && <RecentActivitiesTab activities={recentActivities} />}
-        {tab === "deleted"     && <DeletedTab     findings={filteredDeleted} imgPath={imgPath} />}
+        {tab === "summary" && <SummaryTab report={report} liveInfo={liveInfo} />}
+        {tab === "timeline" && <TimelineTab events={filteredTimeline} dateRangeMs={rangeMs} />}
+        {tab === "recent" && <RecentActivitiesTab activities={recentActivities} />}
+        {tab === "deleted" && <DeletedTab findings={filteredDeleted} imgPath={imgPath} />}
         {tab === "persistence" && <PersistenceTab findings={report.persistence} />}
-        {tab === "config"      && <ConfigTab      findings={report.config} />}
-        {tab === "services"    && <ServicesTab    services={report.services} />}
-        {tab === "browsers"    && <BrowserTab     browsers={filteredBrowsers} />}
-        {tab === "multimedia"  && <MultimediaTab  findings={filteredMultimedia} imgPath={imgPath} />}
-        {tab === "tails"       && <TailsTab       findings={report.tails || []} summary={summary || {}} />}
-        {tab === "tools"       && <ToolsTab       findings={report.findings} />}
-        {tab === "evidence"    && <EvidenceLocker report={report} />}
+        {tab === "config" && <ConfigTab findings={report.config} />}
+        {tab === "services" && <ServicesTab services={report.services} />}
+        {tab === "browsers" && <BrowserTab browsers={filteredBrowsers} />}
+        {tab === "multimedia" && <MultimediaTab findings={filteredMultimedia} imgPath={imgPath} />}
+        {tab === "tails" && <TailsTab findings={report.tails || []} summary={summary || {}} />}
+        {tab === "tools" && <ToolsTab findings={report.findings} />}
+        {tab === "evidence" && <EvidenceLocker report={report} />}
       </div>
     </div>
   );
@@ -4321,8 +4466,8 @@ function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAd
     const hi = src.report?.summary?.total_high ?? 0;
     if (hi === 0) return { label: "CLEAN", cls: "tl-low" };
     if (hi >= 10) return { label: "CRITICAL", cls: "tl-critical" };
-    if (hi >= 5)  return { label: "HIGH",     cls: "tl-high" };
-    return             { label: "MEDIUM",   cls: "tl-medium" };
+    if (hi >= 5) return { label: "HIGH", cls: "tl-high" };
+    return { label: "MEDIUM", cls: "tl-medium" };
   };
 
   return (
@@ -4429,13 +4574,13 @@ function CasePanel({ caseData, activeSourceId, onSelectSource, onAddSource, onAd
           <table className="rp-table" style={{ maxWidth: 600 }}>
             <tbody>
               {[
-                ["Case Name",    caseData.name],
-                ["Case Number",  caseData.number  || "—"],
-                ["Examiner",     caseData.examiner || "—"],
-                ["Created",      fmtDate(caseData.created_at)],
+                ["Case Name", caseData.name],
+                ["Case Number", caseData.number || "—"],
+                ["Examiner", caseData.examiner || "—"],
+                ["Created", fmtDate(caseData.created_at)],
                 ["Last Updated", fmtDate(caseData.updated_at)],
-                ["Sources",      data_sources.length],
-                ["Case ID",      <code style={{ fontSize: 11 }}>{caseData.id}</code>],
+                ["Sources", data_sources.length],
+                ["Case ID", <code style={{ fontSize: 11 }}>{caseData.id}</code>],
               ].map(([k, v]) => (
                 <tr key={k}><td>{k}</td><td>{v}</td></tr>
               ))}
@@ -4535,9 +4680,9 @@ function AgentMessage({ msg }) {
                       {s.observation.error
                         ? s.observation.error
                         : (() => {
-                            const txt = JSON.stringify(s.observation);
-                            return txt.length > 400 ? txt.slice(0, 400) + "…" : txt;
-                          })()}
+                          const txt = JSON.stringify(s.observation);
+                          return txt.length > 400 ? txt.slice(0, 400) + "…" : txt;
+                        })()}
                     </div>
                   )}
                 </div>
@@ -4572,14 +4717,14 @@ const AGENT_EXAMPLES = [
 ];
 
 function AgentPanel() {
-  const [messages,     setMessages]     = useState([]);
-  const [input,        setInput]        = useState("");
-  const [loading,      setLoading]      = useState(false);
-  const [sessionId,    setSessionId]    = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
   const [ollamaStatus, setOllamaStatus] = useState(null);
-  const [model,        setModel]        = useState("qwen2.5:7b");
+  const [model, setModel] = useState("qwen2.5:7b");
   const bottomRef = useRef(null);
-  const abortRef  = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => {
     apiAgentStatus()
@@ -4597,27 +4742,27 @@ function AgentPanel() {
     setInput("");
 
     setMessages(m => [...m,
-      { role: "user",  text: userMsg },
-      { role: "agent", text: "", steps: [], inProgress: true },
+    { role: "user", text: userMsg },
+    { role: "agent", text: "", steps: [], inProgress: true },
     ]);
     setLoading(true);
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let curSession = sessionId;
-    let accSteps   = [];
-    let accText    = "";
+    let accSteps = [];
+    let accText = "";
 
     try {
       const resp = await fetch(`${API}/agent/chat/stream`, {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ message: userMsg, session_id: curSession, model }),
-        signal:  ctrl.signal,
+        body: JSON.stringify({ message: userMsg, session_id: curSession, model }),
+        signal: ctrl.signal,
       });
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
 
-      const reader  = resp.body.getReader();
+      const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
 
@@ -4698,7 +4843,7 @@ function AgentPanel() {
   function stopInvestigation() { abortRef.current?.abort(); }
 
   function clearSession() {
-    if (sessionId) apiAgentReset(sessionId).catch(() => {});
+    if (sessionId) apiAgentReset(sessionId).catch(() => { });
     setMessages([]);
     setSessionId(null);
   }
@@ -4787,11 +4932,11 @@ function AgentPanel() {
 
 function ActivityBar({ view, onView, hasExplorer, hasReport }) {
   const items = [
-    { id: "home",     Icon: Home,           label: "Home",     always: true },
-    { id: "cases",    Icon: BookOpen,        label: "Cases",    always: true },
-    { id: "agent",    Icon: Bot,             label: "Agent",    always: true },
+    { id: "home", Icon: Home, label: "Home", always: true },
+    { id: "cases", Icon: BookOpen, label: "Cases", always: true },
+    { id: "agent", Icon: Bot, label: "Agent", always: true },
     { id: "explorer", Icon: LayoutPanelLeft, label: "Explorer", disabled: !hasExplorer },
-    { id: "report",   Icon: BarChart2,       label: "Report",   disabled: !hasReport },
+    { id: "report", Icon: BarChart2, label: "Report", disabled: !hasReport },
   ];
   const caseActive = view === "cases" || view === "case";
   return (
@@ -4799,9 +4944,8 @@ function ActivityBar({ view, onView, hasExplorer, hasReport }) {
       {items.map(({ id, Icon, label, always, disabled }) => (
         <button
           key={id}
-          className={`act-btn ${
-            (id === "cases" && caseActive) || (id !== "cases" && view === id) ? "active" : ""
-          }`}
+          className={`act-btn ${(id === "cases" && caseActive) || (id !== "cases" && view === id) ? "active" : ""
+            }`}
           title={label}
           disabled={!always && disabled}
           onClick={() => !disabled && onView(id)}
@@ -4815,18 +4959,18 @@ function ActivityBar({ view, onView, hasExplorer, hasReport }) {
 }
 
 export default function App() {
-  const [dialog,      setDialog]      = useState(null);
-  const [report,      setReport]      = useState(null);
-  const [imgPath,     setImgPath]     = useState(null);
-  const [liveInfo,    setLiveInfo]    = useState(null);
-  const [status,      setStatus]      = useState("Ready");
-  const [toolbar,     setToolbar]     = useState(true);
-  const [statbar,     setStatbar]     = useState(true);
+  const [dialog, setDialog] = useState(null);
+  const [report, setReport] = useState(null);
+  const [imgPath, setImgPath] = useState(null);
+  const [liveInfo, setLiveInfo] = useState(null);
+  const [status, setStatus] = useState("Ready");
+  const [toolbar, setToolbar] = useState(true);
+  const [statbar, setStatbar] = useState(true);
   const [reanalyzing, setReanalyzing] = useState(false);
-  const [liveScanning,setLiveScanning]= useState(false);
+  const [liveScanning, setLiveScanning] = useState(false);
   // "home" | "cases" | "case" | "explorer" | "report"
-  const [view,        setView]        = useState("home");
-  const [activeCase,  setActiveCase]  = useState(null);
+  const [view, setView] = useState("home");
+  const [activeCase, setActiveCase] = useState(null);
   const [activeSrcId, setActiveSrcId] = useState(null);
 
   function closeDialog() { setDialog(null); }
@@ -4903,23 +5047,23 @@ export default function App() {
 
   function handleAction(key) {
     switch (key) {
-      case "analyze":       return setDialog("analyze");
-      case "filepick":      return setDialog("filepick");
-      case "live_scan":     return setDialog("live_scan");
-      case "new_case":      return setDialog("new_case");
-      case "view_cases":    return setView("cases");
-      case "export":        return report ? downloadJSON(report) : setStatus("No report to export");
-      case "clear":         setReport(null); setImgPath(null); setLiveInfo(null); setActiveCase(null); setActiveSrcId(null); setView("home"); return setStatus("Analysis cleared");
-      case "settings":      return setDialog("settings");
-      case "shortcuts":     return setDialog("shortcuts");
-      case "about":         return setDialog("about");
-      case "statusbar":     return setStatbar(v => !v);
-      case "toolbar":       return setToolbar(v => !v);
+      case "analyze": return setDialog("analyze");
+      case "filepick": return setDialog("filepick");
+      case "live_scan": return setDialog("live_scan");
+      case "new_case": return setDialog("new_case");
+      case "view_cases": return setView("cases");
+      case "export": return report ? downloadJSON(report) : setStatus("No report to export");
+      case "clear": setReport(null); setImgPath(null); setLiveInfo(null); setActiveCase(null); setActiveSrcId(null); setView("home"); return setStatus("Analysis cleared");
+      case "settings": return setDialog("settings");
+      case "shortcuts": return setDialog("shortcuts");
+      case "about": return setDialog("about");
+      case "statusbar": return setStatbar(v => !v);
+      case "toolbar": return setToolbar(v => !v);
       case "view_explorer": return imgPath ? setView("explorer") : setStatus("Open an image first");
-      case "view_report":   return report  ? setView("report")   : setStatus("Run analysis first");
-      case "explorer":      return imgPath ? setView("explorer") : setStatus("Open an image first");
-      case "report_panel":  return report  ? setView("report")   : setStatus("Run analysis first");
-      default:              return;
+      case "view_report": return report ? setView("report") : setStatus("Run analysis first");
+      case "explorer": return imgPath ? setView("explorer") : setStatus("Open an image first");
+      case "report_panel": return report ? setView("report") : setStatus("Run analysis first");
+      default: return;
     }
   }
 
@@ -4929,7 +5073,7 @@ export default function App() {
       if (e.ctrlKey && e.key === "b") { e.preventDefault(); handleAction("filepick"); }
       if (e.ctrlKey && e.key === "l") { e.preventDefault(); handleAction("live_scan"); }
       if (e.ctrlKey && e.key === ",") { e.preventDefault(); handleAction("settings"); }
-      if (e.key === "F1")             { e.preventDefault(); handleAction("about"); }
+      if (e.key === "F1") { e.preventDefault(); handleAction("about"); }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -5017,9 +5161,9 @@ export default function App() {
 
       <StatusBar visible={statbar} status={status} report={report} />
 
-      {dialog === "analyze"    && <AnalyzeDialog    onClose={closeDialog} onResult={handleResult} />}
-      {dialog === "filepick"   && <FilePickerDialog  onClose={closeDialog} onResult={handleResult} />}
-      {dialog === "live_scan"  && (
+      {dialog === "analyze" && <AnalyzeDialog onClose={closeDialog} onResult={handleResult} />}
+      {dialog === "filepick" && <FilePickerDialog onClose={closeDialog} onResult={handleResult} />}
+      {dialog === "live_scan" && (
         <LiveScanDialog
           onClose={closeDialog}
           onResult={(r, path, info) => { handleResult(r, path); setLiveInfo(info); closeDialog(); }}
@@ -5053,7 +5197,7 @@ export default function App() {
           }}
         />
       )}
-      {dialog === "new_case"   && (
+      {dialog === "new_case" && (
         <NewCaseDialog
           onClose={closeDialog}
           onCreate={(c, options) => {
@@ -5096,9 +5240,9 @@ export default function App() {
           }}
         />
       )}
-      {dialog === "settings"   && <SettingsDialog   onClose={closeDialog} />}
-      {dialog === "shortcuts"  && <ShortcutsDialog  onClose={closeDialog} />}
-      {dialog === "about"      && <AboutDialog      onClose={closeDialog} />}
+      {dialog === "settings" && <SettingsDialog onClose={closeDialog} />}
+      {dialog === "shortcuts" && <ShortcutsDialog onClose={closeDialog} />}
+      {dialog === "about" && <AboutDialog onClose={closeDialog} />}
     </div>
   );
 }

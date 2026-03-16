@@ -72,9 +72,9 @@ def analyze_filesystem(path: str) -> dict:
         return {
             "os": report.os_info.dict() if report.os_info else {},
             "total_findings": len(report.findings),
-            "critical": sum(1 for f in report.findings if f.severity == "critical"),
-            "high":     sum(1 for f in report.findings if f.severity == "high"),
-            "medium":   sum(1 for f in report.findings if f.severity == "medium"),
+            # ToolFinding uses .risk (high/dual-use/…), not .severity
+            "high_risk":  sum(1 for f in report.findings if f.risk == "high"),
+            "dual_use":   sum(1 for f in report.findings if f.risk == "dual-use"),
             "timeline_events": len(report.timeline),
             "deleted_files":   len(report.deleted),
             "persistence_items": len(report.persistence),
@@ -98,9 +98,10 @@ def get_timeline(path: str) -> dict:
     try:
         fs = FilesystemAccessor(path)
         tl = build_timeline(fs)
-        events = [e.dict() for e in tl]
-        critical = [e for e in events if e["severity"] == "critical"]
-        high     = [e for e in events if e["severity"] == "high"]
+        # build_timeline returns List[Dict] — no .dict() call needed
+        events   = [e if isinstance(e, dict) else e.dict() for e in tl]
+        critical = [e for e in events if e.get("severity") == "critical"]
+        high     = [e for e in events if e.get("severity") == "high"]
         return {
             "total_events":    len(events),
             "critical_events": len(critical),
@@ -124,13 +125,14 @@ def get_deleted_files(path: str) -> dict:
     try:
         fs = FilesystemAccessor(path)
         deleted = detect_deleted(fs)
-        items = [f.dict() for f in deleted]
-        suspicious = [i for i in items if i["severity"] in ("critical", "high")]
+        # detect_deleted returns List[Dict] — normalise defensively
+        items = [f if isinstance(f, dict) else f.dict() for f in deleted]
+        suspicious = [i for i in items if i.get("severity") in ("critical", "high")]
         return {
-            "total_deleted":   len(items),
+            "total_deleted":    len(items),
             "suspicious_count": len(suspicious),
-            "suspicious":      suspicious,
-            "all_files":       items[:40],
+            "suspicious":       suspicious,
+            "all_files":        items[:40],
         }
     except Exception as e:
         return {"error": str(e)}
@@ -148,7 +150,8 @@ def get_persistence_mechanisms(path: str) -> dict:
     try:
         fs = FilesystemAccessor(path)
         pers = detect_persistence(fs)
-        items = [p.dict() for p in pers]
+        # detect_persistence returns plain dicts — no .dict() needed
+        items = [p if isinstance(p, dict) else p.dict() for p in pers]
         high_sev = [i for i in items if i["severity"] in ("critical", "high")]
         categories: Dict[str, int] = {}
         for i in items:
