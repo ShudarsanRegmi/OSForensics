@@ -4384,6 +4384,278 @@ function BrowserTab({ browsers = [] }) {
 // MULTIMEDIA TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ─── Bit-Plane / Visual Forensics Analyser ────────────────────────────────────
+function BitPlaneAnalyzer({ findings = [], imgPath }) {
+  const [selectedPath, setSelectedPath] = useState(null);
+  const [channel, setChannel]           = useState("gray"); // "gray"|"r"|"g"|"b"
+  const [loadStatus, setLoadStatus]     = useState("idle"); // "idle"|"loading"|"ready"|"error"
+  const [loadErr, setLoadErr]           = useState(null);
+  const [pixelCache, setPixelCache]     = useState(null);   // { data, w, h }
+  const [renderedPlanes, setRenderedPlanes]   = useState([]); // [{bit, dataUrl, label}]
+  const [channelCanvases, setChannelCanvases] = useState([]); // [{label, dataUrl}]
+  const [imgDims, setImgDims]           = useState(null);
+  const [zoomPlane, setZoomPlane]       = useState(null);   // bit number being zoomed
+
+  const imageItems = (findings || []).filter(f => f.media_type === "image");
+
+  // Auto-select first image when findings arrive
+  useEffect(() => {
+    if (imageItems.length > 0 && !selectedPath) {
+      setSelectedPath(imageItems[0].path);
+    }
+  }, [findings]); // eslint-disable-line
+
+  // Load image → cache raw pixels
+  useEffect(() => {
+    if (!selectedPath || !imgPath) return;
+    setLoadStatus("loading");
+    setLoadErr(null);
+    setPixelCache(null);
+    setRenderedPlanes([]);
+    setChannelCanvases([]);
+    setZoomPlane(null);
+
+    const url = apiMediaUrl(imgPath, selectedPath);
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        setImgDims({ w, h });
+
+        const src = document.createElement("canvas");
+        src.width = w; src.height = h;
+        const ctx = src.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        // Copy pixel data out of the canvas before it goes out of scope
+        const id = ctx.getImageData(0, 0, w, h);
+        // Store as plain Uint8Array so React state serialisation is clean
+        setPixelCache({ data: new Uint8Array(id.data.buffer), w, h });
+        setLoadStatus("ready");
+      } catch (e) {
+        setLoadErr(`Canvas read failed: ${e.message}. The image may be blocked by CORS.`);
+        setLoadStatus("error");
+      }
+    };
+    img.onerror = () => {
+      setLoadErr("Image failed to load – check the backend is running.");
+      setLoadStatus("error");
+    };
+    img.src = url;
+  }, [selectedPath, imgPath]);
+
+  // Re-render bit-planes + channel separation whenever cache or channel changes
+  useEffect(() => {
+    if (!pixelCache) return;
+    const { data: px, w, h } = pixelCache;
+
+    // Helper: sample the chosen channel for pixel index i
+    const sample = (i) => {
+      const ri = i * 4;
+      if (channel === "r") return px[ri];
+      if (channel === "g") return px[ri + 1];
+      if (channel === "b") return px[ri + 2];
+      // gray = rec-601 luminance
+      return Math.round(0.299 * px[ri] + 0.587 * px[ri + 1] + 0.114 * px[ri + 2]);
+    };
+
+    // Draw a single canvas from a per-pixel callback, return dataURL
+    const makeCanvas = (perPixelRGBA) => {
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      const ctx = c.getContext("2d");
+      const id  = ctx.createImageData(w, h);
+      const d   = id.data;
+      for (let i = 0; i < w * h; i++) {
+        const ri = i * 4;
+        perPixelRGBA(i, ri, d);
+        d[ri + 3] = 255;
+      }
+      ctx.putImageData(id, 0, 0);
+      return c.toDataURL();
+    };
+
+    // 8 bit planes: bit 7 (MSB) → bit 0 (LSB)
+    const planes = [];
+    for (let bit = 7; bit >= 0; bit--) {
+      const dataUrl = makeCanvas((i, ri, d) => {
+        const v = ((sample(i) >> bit) & 1) ? 255 : 0;
+        d[ri] = v; d[ri + 1] = v; d[ri + 2] = v;
+      });
+      planes.push({
+        bit,
+        dataUrl,
+        label: bit === 7 ? "Bit 7 — MSB" : bit === 0 ? "Bit 0 — LSB" : `Bit ${bit}`,
+      });
+    }
+    setRenderedPlanes(planes);
+
+    // Channel separation strip (always shows all 4 regardless of selector)
+    const chDefs = [
+      { key: "lum",  label: "Luminance" },
+      { key: "r",    label: "Red"       },
+      { key: "g",    label: "Green"     },
+      { key: "b",    label: "Blue"      },
+    ];
+    const chCanvases = chDefs.map(({ key, label }) => {
+      const dataUrl = makeCanvas((i, ri, d) => {
+        if (key === "lum") {
+          const v = Math.round(0.299 * px[ri] + 0.587 * px[ri+1] + 0.114 * px[ri+2]);
+          d[ri] = v; d[ri+1] = v; d[ri+2] = v;
+        } else if (key === "r") {
+          d[ri] = px[ri]; d[ri+1] = 0; d[ri+2] = 0;
+        } else if (key === "g") {
+          d[ri] = 0; d[ri+1] = px[ri+1]; d[ri+2] = 0;
+        } else {
+          d[ri] = 0; d[ri+1] = 0; d[ri+2] = px[ri+2];
+        }
+      });
+      return { label, dataUrl };
+    });
+    setChannelCanvases(chCanvases);
+  }, [pixelCache, channel]);
+
+  if (!imageItems.length) {
+    return (
+      <EmptyState
+        icon={Image}
+        message="No image files available. Run a multimedia scan to populate image files."
+      />
+    );
+  }
+
+  const CHANNEL_OPTS = [
+    { id: "gray", label: "Grayscale" },
+    { id: "r",    label: "Red"       },
+    { id: "g",    label: "Green"     },
+    { id: "b",    label: "Blue"      },
+  ];
+
+  return (
+    <div className="bp-container">
+      {/* ── Toolbar ─────────────────────────────────────────── */}
+      <div className="bp-toolbar">
+        <label className="bp-label">Image</label>
+        <select
+          className="input bp-select"
+          value={selectedPath || ""}
+          onChange={e => setSelectedPath(e.target.value)}
+        >
+          {imageItems.map(f => (
+            <option key={f.path} value={f.path}>
+              {f.name || f.path.split("/").pop()}
+            </option>
+          ))}
+        </select>
+
+        <span className="bp-divider" />
+
+        <label className="bp-label">Channel</label>
+        <div className="bp-channel-btns">
+          {CHANNEL_OPTS.map(o => (
+            <button
+              key={o.id}
+              className={"btn-pill btn-xs" + (channel === o.id ? " btn-pill-active" : "")}
+              onClick={() => setChannel(o.id)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+
+        {imgDims && (
+          <span className="bp-dims">
+            {imgDims.w} × {imgDims.h} px
+          </span>
+        )}
+      </div>
+
+      {/* ── States ──────────────────────────────────────────── */}
+      {loadStatus === "loading" && (
+        <div className="bp-loading">
+          <Loader2 size={18} className="spin" style={{ marginRight: 8 }} />
+          Loading image pixels…
+        </div>
+      )}
+      {loadStatus === "error" && (
+        <div className="dlg-error" style={{ margin: "12px 0" }}>{loadErr}</div>
+      )}
+
+      {/* ── Content ─────────────────────────────────────────── */}
+      {loadStatus === "ready" && (
+        <>
+          {/* Channel Separation */}
+          <div className="bp-section-hdr">
+            <Layers size={13} /> Channel Separation
+          </div>
+          <div className="bp-ch-row">
+            {channelCanvases.map(c => (
+              <div key={c.label} className="bp-ch-card">
+                <img src={c.dataUrl} alt={c.label} className="bp-ch-img" />
+                <div className="bp-ch-label">{c.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bit-Plane Grid */}
+          <div className="bp-section-hdr" style={{ marginTop: 20 }}>
+            <Eye size={13} />
+            Bit-Plane Dissection — {CHANNEL_OPTS.find(o => o.id === channel)?.label} channel
+            <span className="bp-hint">Bit 7 = MSB &nbsp;·&nbsp; Bit 0 = LSB (primary steganography plane)</span>
+          </div>
+          <div className="bp-planes-grid">
+            {renderedPlanes.map(p => (
+              <div
+                key={p.bit}
+                className={"bp-plane-card" + (p.bit === 0 ? " bp-lsb-card" : p.bit === 7 ? " bp-msb-card" : "")}
+                onClick={() => setZoomPlane(p.bit === zoomPlane ? null : p.bit)}
+                title="Click to zoom"
+              >
+                <img
+                  src={p.dataUrl}
+                  alt={p.label}
+                  className={"bp-plane-img" + (zoomPlane === p.bit ? " bp-plane-zoomed" : "")}
+                />
+                <div className="bp-plane-label">
+                  {p.label}
+                  {p.bit === 0 && <span className="bp-badge bp-badge-lsb">LSB</span>}
+                  {p.bit === 7 && <span className="bp-badge bp-badge-msb">MSB</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="bp-info-note">
+            <Info size={11} />
+            In steganography detection the <strong>LSB (Bit 0)</strong> plane is studied first — hidden data
+            injected into the least-significant bits produces a random, noisy pattern rather than the
+            smooth gradients seen in natural images. Compare the LSB plane with Bit 1 and Bit 2 for
+            anomalous uniformity or structure.
+          </p>
+        </>
+      )}
+
+      {/* Zoom overlay */}
+      {zoomPlane !== null && renderedPlanes.length > 0 && (
+        <div className="bp-zoom-overlay" onClick={() => setZoomPlane(null)}>
+          <div className="bp-zoom-modal" onClick={e => e.stopPropagation()}>
+            <div className="bp-zoom-hdr">
+              <span>{renderedPlanes.find(p => p.bit === zoomPlane)?.label}</span>
+              <button className="mv-close" onClick={() => setZoomPlane(null)}><X size={16} /></button>
+            </div>
+            <img
+              src={renderedPlanes.find(p => p.bit === zoomPlane)?.dataUrl}
+              alt={`bit ${zoomPlane}`}
+              className="bp-zoom-img"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MM_TYPE_META = {
   image: { Icon: Image, label: "Image", color: "#7c3aed" },
   video: { Icon: Film, label: "Video", color: "#2563eb" },
@@ -4733,7 +5005,7 @@ function MultimediaTab({ findings = [], imgPath }) {
         {[
           { id: "gallery", label: "Gallery" },
           { id: "stego", label: "Stego / LSB" },
-          { id: "bitplanes", label: "Bit-Plane Analysis" },
+          { id: "bitplanes", label: "Visual Forensics" },
         ].map((t) => (
           <button
             key={t.id}
@@ -4899,44 +5171,9 @@ function MultimediaTab({ findings = [], imgPath }) {
         </div>
       )}
 
-      {/* Bit-plane analysis subtab */}
+      {/* Bit-plane / visual forensics subtab */}
       {subtab === "bitplanes" && (
-        <div style={{ marginTop: 8 }}>
-          {(!localFindings || localFindings.length === 0) ? (
-            <EmptyState
-              icon={Image}
-              message="No media files available for bit-plane analysis."
-            />
-          ) : (
-            <table className="mm-meta-table">
-              <thead>
-                <tr>
-                  <th className="mm-meta-key">File</th>
-                  <th className="mm-meta-key">LSB entropy</th>
-                  <th className="mm-meta-key">p(1)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {localFindings.map((m) => (
-                  <tr key={m.path}>
-                    <td className="mm-meta-val">
-                      <div className="mm-list-name">
-                        {m.name || m.path.split("/").pop()}
-                      </div>
-                      <div className="mm-list-path">{m.path}</div>
-                    </td>
-                    <td className="mm-meta-val">
-                      {m.metadata?.lsb_entropy_bits ?? "—"}
-                    </td>
-                    <td className="mm-meta-val">
-                      {m.metadata?.lsb_p_one ?? "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        <BitPlaneAnalyzer findings={localFindings} imgPath={imgPath} />
       )}
 
       {viewItem && (
