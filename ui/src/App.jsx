@@ -2717,22 +2717,129 @@ function PersistenceTab({ findings = [] }) {
 }
 
 const RISK_COLOR = { high: "#dc2626", medium: "#d97706", low: "#16a34a", "privacy-infrastructure": "#7c3aed", "dual-use": "#2563eb", infrastructure: "#0891b2" };
+const CATEGORY_INFO = {
+  attack: { label: "Attack Tools", icon: Zap, color: "#dc2626" },
+  network: { label: "Network Tools", icon: Wifi, color: "#0891b2" },
+  web: { label: "Web Tools", icon: Globe, color: "#7c3aed" },
+  privacy: { label: "Privacy Tools", icon: Shield, color: "#16a34a" },
+  other: { label: "Other Tools", icon: Package, color: "#6b7280" },
+};
+
 function ToolsTab({ findings = [] }) {
-  if (findings.length === 0) return <EmptyState icon={Search} message="No notable tools detected." />;
+  const [evidenceModal, setEvidenceModal] = useState(null);
+
+  // Group findings by category
+  const groupedFindings = findings.reduce((acc, f) => {
+    const cat = f.category || "other";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(f);
+    return acc;
+  }, {});
+
+  const EvidenceModal = ({ tool, evidence, onClose }) => (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        background: 'white',
+        padding: '20px',
+        borderRadius: '8px',
+        maxWidth: '600px',
+        maxHeight: '80vh',
+        overflow: 'auto'
+      }}>
+        <h3>Evidence for {tool}</h3>
+        <div>
+          <h4>Files/Paths where {tool} was detected:</h4>
+          <ul>
+            {evidence.map((ev, i) => (
+              <li key={i}><code>{ev}</code></li>
+            ))}
+          </ul>
+        </div>
+        <button onClick={onClose} style={{ marginTop: '10px' }}>Close</button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="tab-content">
-      <table className="rp-table findings">
-        <thead><tr><th>Tool</th><th>Risk</th><th>Evidence</th></tr></thead>
-        <tbody>
-          {findings.map((f, i) => (
-            <tr key={i}>
-              <td><strong>{f.tool}</strong></td>
-              <td><span className="sev-badge" style={{ background: RISK_COLOR[f.risk] || "#6b7280" }}>{f.risk}</span></td>
-              <td><ul className="evidence-list">{f.evidence?.map((ev, j) => <li key={j}><code>{ev}</code></li>)}</ul></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {Object.entries(groupedFindings).map(([category, tools]) => (
+        <div key={category} className="tools-category" style={{ marginBottom: '24px' }}>
+          <div className="category-header" style={{ 
+            padding: '8px 12px', 
+            background: '#f5f6f9', 
+            borderRadius: '6px 6px 0 0',
+            border: '1px solid #c8cdd8',
+            fontWeight: '600'
+          }}>
+            <span className="category-title" style={{ textTransform: 'capitalize' }}>
+              {category} Tools
+            </span>
+            <span className="category-count">({tools.length})</span>
+          </div>
+          <table className="rp-table findings">
+            <thead>
+              <tr>
+                <th>Tool</th>
+                <th>Risk</th>
+                <th>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tools.map((f, i) => (
+                <tr key={i}>
+                  <td><strong>{f.tool}</strong></td>
+                  <td>
+                    <span className="sev-badge" style={{ background: RISK_COLOR[f.risk] || "#6b7280" }}>
+                      {f.risk}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="evidence-cell">
+                      {f.evidence && f.evidence.length > 0 ? (
+                        <>
+                          <ul className="evidence-list">
+                            {f.evidence.slice(0, 2).map((ev, j) => (
+                              <li key={j}><code>{ev}</code></li>
+                            ))}
+                          </ul>
+                          {f.evidence.length > 2 && (
+                            <button 
+                              className="view-more-btn"
+                              onClick={() => setEvidenceModal({ tool: f.tool, evidence: f.evidence })}
+                            >
+                              View all ({f.evidence.length}) →
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="no-evidence">No evidence found</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      {evidenceModal && (
+        <EvidenceModal 
+          tool={evidenceModal.tool} 
+          evidence={evidenceModal.evidence} 
+          onClose={() => setEvidenceModal(null)} 
+        />
+      )}
     </div>
   );
 }
