@@ -578,6 +578,7 @@ dependencies = [
     { name = "dotenv" },
     { name = "google" },
     { name = "google-generativeai" },
+    { name = "pytsk3" },
 ]
 
 [package.dev-dependencies]
@@ -595,6 +596,7 @@ requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "google", specifier = ">=3.0.0" },
     { name = "google-generativeai", specifier = ">=0.8.6" },
+    { name = "pytsk3", specifier = ">=20250801" },
 ]
 
 [package.metadata.requires-dev]
@@ -831,6 +833,12 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/39/2a/cbbf9250020a4a8dd53ba83a46c097b69e5eb49dd14e708f496f548c6612/pytokens-0.4.1-cp314-cp314t-win_amd64.whl", hash = "sha256:584c80c24b078eec1e227079d56dc22ff755e0ba8654d8383b2c549107528918", size = 116287, upload-time = "2026-01-30T01:03:30.912Z" },
     { url = "https://files.pythonhosted.org/packages/c6/78/397db326746f0a342855b81216ae1f0a32965deccfd7c830a2dbc66d2483/pytokens-0.4.1-py3-none-any.whl", hash = "sha256:26cef14744a8385f35d0e095dc8b3a7583f6c953c2e3d269c7f82484bf5ad2de", size = 13729, upload-time = "2026-01-30T01:03:45.029Z" },
 ]
+
+[[package]]
+name = "pytsk3"
+version = "20250801"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/68/54f597a6c4f18a8bd7e23ca6e8a370867a39d0caa8104c91b8500105875f/pytsk3-20250801.tar.gz", hash = "sha256:6acca9998d4610c46fdb7d637942dc354dca58b227d8cee3662ec99b4a8aa2bd", size = 3327891, upload-time = "2025-09-07T06:58:00.322Z" }
 
 [[package]]
 name = "requests"

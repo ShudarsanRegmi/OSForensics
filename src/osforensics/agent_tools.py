@@ -170,10 +170,12 @@ def get_persistence_mechanisms(path: str) -> dict:
 @_tool(
     "get_browser_artifacts",
     (
-        "Extract browser forensics: browsing history, bookmarks, cookies, "
-        "download records, and installed extensions from Chrome, Firefox, etc."
+        "Extract browser forensics (history, downloads, cookies, extensions) from "
+        "user profiles. Path MUST be a specific directory (e.g. /home/user or /), "
+        "NOT a wildcard like /home/user/* or a specific file like cookies.sqlite. "
+        "The tool automatically scans for browser profiles within the given root."
     ),
-    {"path": "str: absolute path to a mounted filesystem directory"},
+    {"path": "str: absolute path to a mounted filesystem directory (root or home)"},
 )
 def get_browser_artifacts(path: str) -> dict:
     try:
@@ -249,9 +251,9 @@ def analyze_memory_dump(dump_path: str) -> dict:
 @_tool(
     "search_file_content",
     (
-        "Search for a text pattern inside files at a given path. Useful for "
-        "finding credentials, c2 domains, config values, or specific strings "
-        "without running a full analysis."
+        "Search for a text pattern inside files at a given path. "
+        "Path must be a specific directory or file (NO wildcards like *). "
+        "Useful for finding credentials, c2 domains, or specific strings."
     ),
     {
         "path":    "str: absolute path to directory or file to search",
@@ -259,6 +261,8 @@ def analyze_memory_dump(dump_path: str) -> dict:
     },
 )
 def search_file_content(path: str, pattern: str) -> dict:
+    if "*" in path:
+        return {"error": f"Wildcards (*) are not supported in path: {path}. Please provide a specific directory or file path."}
     p = Path(path).resolve()
     if not p.exists():
         return {"error": f"Path does not exist: {path}"}

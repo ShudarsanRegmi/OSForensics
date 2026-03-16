@@ -6120,6 +6120,29 @@ body,
   font-size: 0.9em;
 }
 
+.markdown-report table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  border: 1px solid var(--wf-border);
+}
+
+.markdown-report th, .markdown-report td {
+  padding: 8px 12px;
+  border: 1px solid var(--wf-border);
+  text-align: left;
+}
+
+.markdown-report th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: var(--wf-text);
+}
+
+.markdown-report tr:nth-child(even) {
+  background: #f9fafb;
+}
+
 .terminal-cursor {
   display: inline-block;
   width: 8px;

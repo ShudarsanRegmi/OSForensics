@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Search, FolderSearch, Trash2, Settings, Microscope,
   X, FolderOpen, AlertTriangle, CheckCircle, HardDrive, Activity,
@@ -5552,7 +5554,6 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExportJson, onExpor
           <button className="btn-secondary btn-sm" onClick={onReanalyze} disabled={reanalyzing} title="Re-run analysis on the same image">
             <RefreshCw size={12} className={reanalyzing ? "spin" : ""} /> {reanalyzing ? "Analyzing…" : "Reanalyze"}
           </button>
-          <button className="btn-secondary btn-sm" onClick={onExportJson} title="Download raw forensic report as JSON"><FolderOpen size={12} /> JSON</button>
           <button className="btn-secondary btn-sm" onClick={onExportHtml} title="Generate a structured HTML forensic dossier"><FileText size={12} /> HTML</button>
           <button className="btn-secondary btn-sm" onClick={onExportPdf} title="Export comprehensive report as PDF"><Download size={12} /> PDF</button>
           <button className="btn-secondary btn-sm" onClick={onExportExecutivePdf} title="Export a concise executive summary PDF"><Download size={12} /> Exec PDF</button>
@@ -6363,7 +6364,7 @@ function AgentMessage({ msg }) {
             <Loader2 size={12} className="spin" /> Analysing evidence…
           </span>
         ) : (
-          <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
+          <SimpleMarkdown text={msg.text} />
         )}
       </div>
     </div>
@@ -6378,14 +6379,26 @@ const AGENT_EXAMPLES = [
 ];
 
 function AgentPanel() {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(() => {
+    try { const saved = localStorage.getItem("osf_agent_messages"); return saved ? JSON.parse(saved) : []; }
+    catch { return []; }
+  });
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sessionId, setSessionId] = useState(null);
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem("osf_agent_session") || null);
   const [ollamaStatus, setOllamaStatus] = useState(null);
-  const [model, setModel] = useState("qwen2.5:7b");
+  const [model, setModel] = useState("qwen3.5");
   const bottomRef = useRef(null);
   const abortRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem("osf_agent_messages", JSON.stringify(messages));
+  }, [messages]);
+
+  useEffect(() => {
+    if (sessionId) localStorage.setItem("osf_agent_session", sessionId);
+    else localStorage.removeItem("osf_agent_session");
+  }, [sessionId]);
 
   useEffect(() => {
     apiAgentStatus()
@@ -6507,6 +6520,8 @@ function AgentPanel() {
     if (sessionId) apiAgentReset(sessionId).catch(() => { });
     setMessages([]);
     setSessionId(null);
+    localStorage.removeItem("osf_agent_messages");
+    localStorage.removeItem("osf_agent_session");
   }
 
   return (
@@ -6532,20 +6547,6 @@ function AgentPanel() {
           )}
         </div>
       </div>
-
-      {/* Ollama setup notice */}
-      {ollamaStatus && !ollamaStatus.available && (
-        <div className="ag-notice">
-          <div className="ag-notice-title">
-            <AlertTriangle size={13} /> {ollamaStatus.message}
-          </div>
-          <div className="ag-notice-steps">
-            <code>curl -fsSL https://ollama.ai/install.sh | sh</code>
-            <code>ollama serve</code>
-            <code>ollama pull qwen2.5:7b</code>
-          </div>
-        </div>
-      )}
 
       {/* message thread */}
       <div className="ag-messages">
@@ -6593,34 +6594,14 @@ function AgentPanel() {
 
 const SimpleMarkdown = ({ text }) => {
   if (!text) return null;
-  
-  const lines = text.split("\n");
-  const rendered = lines.map((line, i) => {
-    // Headers
-    if (line.startsWith("### ")) return <h3 key={i}>{line.replace("### ", "")}</h3>;
-    if (line.startsWith("## ")) return <h2 key={i}>{line.replace("## ", "")}</h2>;
-    if (line.startsWith("# ")) return <h1 key={i}>{line.replace("# ", "")}</h1>;
-    
-    // Lists
-    if (line.trim().startsWith("- ")) {
-      return <li key={i} className="ai-list-item">{line.trim().replace("- ", "")}</li>;
-    }
-    
-    // Bold & Code (Very simple inline replacement)
-    let content = line;
-    // Replace **bold** with <strong>
-    content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // Replace `code` with <code>
-    content = content.replace(/`(.*?)`/g, '<code>$1</code>');
-    
-    if (line.trim() === "") return <br key={i} />;
-    
-    return <p key={i} dangerouslySetInnerHTML={{ __html: content }} />;
-  });
-
-  return <div className="markdown-report">{rendered}</div>;
+  return (
+    <div className="markdown-report">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 };
-
 function MemoryAnalyser() {
   const [data, setData] = useState(null);
   const [aiInsight, setAiInsight] = useState(null);
@@ -7378,7 +7359,9 @@ export default function App() {
         <div className="main-content">
           {view === "home" && <WorkspaceHome onAction={handleAction} />}
 
-          {view === "agent" && <AgentPanel />}
+          <div style={{ display: view === "agent" ? "flex" : "none", height: "100%", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            <AgentPanel />
+          </div>
 
           {view === "cases" && (
             <CasesView
