@@ -146,18 +146,42 @@ def _sanitize_escapes(text: str) -> str:
 
 
 def _parse_json(text: str) -> dict:
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```[a-z]*\n?", "", text)
-        text = re.sub(r"\n?```\s*$", "", text.strip())
-    text = _sanitize_escapes(text)
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if m:
+    """Extract and parse the JSON object from an LLM response.
+    
+    If no valid JSON is found, returns a default 'ANSWER' structure 
+    using the raw text as the answer.
+    """
+    text_stripped = text.strip()
+    
+    # Try to find content inside markdown code blocks first
+    m_code = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text_stripped, re.DOTALL)
+    target = m_code.group(1) if m_code else None
+    
+    if not target:
+        # Fallback: search for the outermost braces
+        m_braces = re.search(r"(\{.*\})", text_stripped, re.DOTALL)
+        target = m_braces.group(1) if m_braces else None
+
+    if target:
+        target = _sanitize_escapes(target)
         try:
-            return json.loads(m.group())
+            return json.loads(target)
         except json.JSONDecodeError:
-            pass
-    raise ValueError(f"No valid JSON in LLM response: {text[:300]!r}")
+            # One last try: remove anything before the first { and after the last }
+            try:
+                start = target.find('{')
+                end = target.rfind('}') + 1
+                if start != -1 and end > 0:
+                    return json.loads(target[start:end])
+            except Exception:
+                pass
+
+    # No valid JSON found. Treat as direct answer.
+    return {
+        "thought": "Direct response generated.",
+        "action": "ANSWER",
+        "answer": text_stripped
+    }
 
 
 def _truncate(data: Any, max_chars: int = MAX_OBS_CHARS) -> str:
@@ -194,15 +218,15 @@ Tool call:
   "args":    {{"param": "value"}}
 }}
 
-Final answer:
+When you have enough evidence to answer (or for general questions):
 {{
-  "thought": "Brief summary of findings",
+  "thought": "Brief summary of findings or response reasoning",
   "action":  "ANSWER",
-  "answer":  "DETAILED FORENSIC REPORT IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
+  "answer":  "DETAILED FORENSIC REPORT OR RESPONSE IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
 }}
 
 ## CONSTRAINTS
-- Always use at least one tool before answering.
+- Use forensic tools if the task requires evidence gathering; otherwise, answer directly.
 - Cite specific file paths, PIDs, timestamps, IPs in your answer.
 - Maximum {max_steps} steps, then give best-effort answer.
 - Task context: {task}
@@ -371,15 +395,16 @@ Dispatch a sub-agent:
   "args":    {{"agent_id": "browser_agent", "task": "...", "path": "..."}}
 }}
 
-Final synthesis:
+Final synthesis (or direct response for general questions):
 {{
-  "thought": "Brief summary of findings",
+  "thought": "Brief summary of findings or response reasoning",
   "action":  "ANSWER",
-  "answer":  "DETAILED FORENSIC REPORT IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
+  "answer":  "DETAILED FORENSIC REPORT OR RESPONSE IN MARKDOWN FORMAT. Use headers, lists, and bold text for clarity."
 }}
 
 ## ORCHESTRATION RULES
-- Decompose the user query into domain-specific sub-tasks.
+- Decompose the user query into domain-specific sub-tasks if it requires forensic analysis.
+- For general or normal chat questions, answer directly using the ANSWER action.
 - Dispatch agents whose domains are relevant to the query.
 - Synthesise ALL sub-agent answers into a cohesive forensic narrative.
 - Maximum {max_steps} orchestration steps total.
