@@ -5,12 +5,13 @@ import {
   Clock, Shield, ShieldAlert, Eye, ChevronDown, ChevronRight, Hash, Terminal,
   Lock, Server, Key, Folder, FolderOpen as FolderOpenIcon, FileText,
   Wifi, Package, List, Database, Cpu, Box, Globe, Users, ChevronUp,
-  File, Code, RefreshCw, Info, LayoutPanelLeft, BarChart2, Home,
+  File, Code, RefreshCw, Info, LayoutPanelLeft, BarChart2, BarChart3, Home,
   BookOpen, Plus, Filter, Bot, Send, Loader2, Zap,
   Image, Film, Music, MapPin, Camera, Layers, Download, Play,
   Sailboat,
   Usb,
-  Share2, Paperclip, Link, Archive, Layers as LayersIcon
+  Share2, Paperclip, Link, Archive, Layers as LayersIcon,
+  DollarSign, Files, Network
 } from "lucide-react";
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ const get = async (url) => {
 };
 
 const apiAnalyze     = (path)       => post("/analyze",        { image_path: path });
+const apiAnalyzeTailsDeep = (path, opts = {}) => post("/analyze/tails/deep", { image_path: path, ...opts });
 const apiAnalyzeLive = (scanTypes)   => post("/analyze/live",  scanTypes || {});
 const apiAnalyzeSsh  = (body)        => post("/analyze/ssh",   body);
 const apiAnalyzeSshfs = (body)       => post("/analyze/sshfs", body);
@@ -65,6 +67,7 @@ const apiCaseGet = (id) => get(`/cases/${id}`);
 const apiCaseDelete = (id) => fetch(`${API}/cases/${id}`, { method: "DELETE" }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
 const apiCaseAnalyze = (caseId, imgPath) => post(`/cases/${caseId}/analyze`, { image_path: imgPath });
 const apiCaseAnalyzeTails = (caseId, imgPath) => post(`/cases/${caseId}/analyze/tails`, { image_path: imgPath });
+const apiCaseAnalyzeTailsDeep = (caseId, imgPath, opts = {}) => post(`/cases/${caseId}/analyze/tails/deep`, { image_path: imgPath, ...opts });
 const apiCaseAnalyzeLive = (caseId, scanTypes) => post(`/cases/${caseId}/analyze/live`, scanTypes || {});
 const apiCaseAnalyzeSsh  = (caseId, body)      => post(`/cases/${caseId}/analyze/ssh`, body);
 const apiCaseAnalyzeSshfs = (caseId, body)     => post(`/cases/${caseId}/analyze/sshfs`, body);
@@ -4793,6 +4796,1150 @@ const REPORT_TABS = [
   { id: "evidence", label: "Evidence", Icon: Package },
 ];
 
+function isTailsFocusedReport(report) {
+  const osName = String(report?.os_info?.name || "").toLowerCase();
+  const osId = String(report?.os_info?.id || "").toLowerCase();
+  const tags = (report?.os_info?.variant_tags || []).map((t) => String(t).toLowerCase());
+  const analysisMode = String(report?.summary?.analysis_mode || "").toLowerCase();
+  const tailsTag = tags.some((t) => t === "tails" || t.startsWith("tails_"));
+
+  return (
+    osName === "tails" ||
+    osName.startsWith("tails ") ||
+    osId === "tails" ||
+    tailsTag ||
+    analysisMode === "tails_os"
+  );
+}
+
+const TAILS_HIGH_RISK_PATHS = [".gnupg", ".ssh", ".electrum", ".bitcoin", ".monero"];
+const TAILS_SUSPICIOUS_CMD_RE = /\b(nmap|sqlmap|hydra|torsocks|proxychains|curl|wget|nc|netcat|ssh|scp|gpg|electrum)\b/i;
+
+function safeLower(value) {
+  return String(value || "").toLowerCase();
+}
+
+function hasTailsArtifactData(artifacts) {
+  if (!artifacts || typeof artifacts !== "object") return false;
+  return [
+    artifacts?.persistence_modules?.total,
+    artifacts?.crypto_wallets?.total,
+    artifacts?.identity_keys?.total_identities,
+    artifacts?.tor_browser_artifacts?.total,
+    artifacts?.user_files?.stats?.total,
+    artifacts?.dotfiles_and_activity?.history_entries,
+    artifacts?.network_config?.bridges_count,
+  ].some((value) => Number(value || 0) > 0);
+}
+
+function tailsModuleLabel(path) {
+  const lower = safeLower(path);
+  if (lower.includes(".gnupg")) return "GnuPG Keys";
+  if (lower.includes(".ssh")) return "SSH Keys";
+  if (lower.includes(".electrum")) return "Electrum Wallet";
+  if (lower.includes(".thunderbird")) return "Thunderbird";
+  if (lower.includes("persistent")) return "Persistent Files";
+  if (lower.includes("tor-browser") || lower.includes(".mozilla")) return "Tor Browser Data";
+  if (lower.includes("dotfiles")) return "Dotfiles";
+  return "Persistent Module";
+}
+
+function tailsModuleRisk(path) {
+  const lower = safeLower(path);
+  if (TAILS_HIGH_RISK_PATHS.some((token) => lower.includes(token))) return "high";
+  if (lower.includes("tor-browser") || lower.includes(".mozilla") || lower.includes(".thunderbird")) return "medium";
+  return "low";
+}
+
+function parsePersistenceModulesText(content) {
+  if (!content) return [];
+  return content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#") && line.startsWith("/"))
+    .map((path) => ({
+      source: path,
+      destination: path,
+      type: tailsModuleLabel(path),
+      risk_level: tailsModuleRisk(path),
+    }));
+}
+
+function parseKeyValueText(content) {
+  const out = {};
+  for (const line of String(content || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || !trimmed.includes("=")) continue;
+    const [key, ...rest] = trimmed.split("=");
+    out[key] = rest.join("=").replace(/^"|"$/g, "");
+  }
+  return out;
+}
+
+function classifyPersistentFile(name) {
+  const ext = safeLower(name).split(".").pop();
+  if (["txt", "md", "doc", "docx", "pdf"].includes(ext)) return "Documents";
+  if (["jpg", "jpeg", "png", "gif", "bmp"].includes(ext)) return "Images";
+  if (["zip", "7z", "rar", "tar", "gz"].includes(ext)) return "Archives";
+  if (["sqlite", "db", "dat", "kdbx"].includes(ext)) return "Databases";
+  if (["py", "sh", "js", "rb", "go"].includes(ext)) return "Scripts";
+  return "Other";
+}
+
+function extractHistoryInsights(content) {
+  const lines = String(content || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-40);
+  const suspicious = lines.filter((line) => TAILS_SUSPICIOUS_CMD_RE.test(line)).slice(-8);
+  return { lines, suspicious };
+}
+
+function parseTorConfig(content) {
+  const bridges = [];
+  const custom = [];
+  const hidden = [];
+  for (const rawLine of String(content || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (/^bridge\s+/i.test(line)) bridges.push(line);
+    if (/^hiddenservice(dir|port)\s+/i.test(line)) hidden.push(line);
+    if (/^(entrynodes|exitnodes|socksport|dnsport|clientuseipv6|usebridges)\s+/i.test(line)) custom.push(line);
+  }
+  return { bridges, hidden, custom };
+}
+
+async function safeBrowseMount(imgPath, path) {
+  try {
+    return await apiBrowse(imgPath, path);
+  } catch {
+    return { path, children: [] };
+  }
+}
+
+async function safeStatMount(imgPath, path) {
+  try {
+    return await apiStat(imgPath, path);
+  } catch {
+    return { path, exists: false };
+  }
+}
+
+async function safeReadMount(imgPath, path) {
+  try {
+    return await apiRead(imgPath, path);
+  } catch {
+    return { path, exists: false, content: "" };
+  }
+}
+
+function computeAnonymityScoreFromArtifacts(artifacts, mountInfo) {
+  let score = 0;
+  const leaks = [];
+  if ((artifacts?.persistence_modules?.total || 0) > 0) {
+    score += 20;
+    leaks.push("Persistence modules enabled");
+  }
+  if ((artifacts?.crypto_wallets?.total || 0) > 0) {
+    score += 18;
+    leaks.push("Cryptocurrency wallet artifacts detected");
+  }
+  if ((artifacts?.identity_keys?.total_identities || 0) > 0) {
+    score += 18;
+    leaks.push("Cryptographic identity keys present");
+  }
+  if ((artifacts?.tor_browser_artifacts?.total || 0) > 0) {
+    score += 10;
+    leaks.push("Tor browser profile data persists");
+  }
+  if ((artifacts?.dotfiles_and_activity?.suspicious_count || 0) > 0) {
+    score += 12;
+    leaks.push("Command history exposes operator activity");
+  }
+  if ((artifacts?.network_config?.bridges_count || 0) > 0 || (artifacts?.network_config?.hidden_services?.length || 0) > 0) {
+    score += 12;
+    leaks.push("Tor network customization recovered");
+  }
+  if (mountInfo?.encryptedPersistence) {
+    score += 6;
+    leaks.push("Encrypted persistence volume unlocked during acquisition");
+  }
+  score = Math.min(score, 100);
+  return {
+    score,
+    max: 100,
+    risk_level: score >= 75 ? "critical" : score >= 55 ? "high" : score >= 30 ? "medium" : "low",
+    primary_leaks: leaks.slice(0, 5),
+    leak_count: leaks.length,
+  };
+}
+
+function synthesizeTailsFindings(snapshot, fallbackFindings = []) {
+  if (Array.isArray(fallbackFindings) && fallbackFindings.length > 0) return fallbackFindings;
+  if (!snapshot) return [];
+  const findings = [];
+  const add = (category, detail, severity = "info", evidence = []) => findings.push({ source: "tails-mount", category, detail, severity, evidence });
+  if ((snapshot?.artifacts?.persistence_modules?.total || 0) > 0) {
+    add("persistence", `Recovered ${snapshot.artifacts.persistence_modules.total} persistence module definition(s).`, "high", snapshot.artifacts.persistence_modules.enabled.map((m) => m.destination));
+  }
+  if ((snapshot?.artifacts?.crypto_wallets?.total || 0) > 0) {
+    add("crypto_wallets", `Detected ${snapshot.artifacts.crypto_wallets.total} cryptocurrency wallet artifact(s).`, "high", snapshot.artifacts.crypto_wallets.wallets.map((w) => w.path));
+  }
+  if ((snapshot?.artifacts?.identity_keys?.total_identities || 0) > 0) {
+    add("identity_keys", `Recovered ${snapshot.artifacts.identity_keys.total_identities} SSH/GPG identity artifact(s).`, "high");
+  }
+  if ((snapshot?.artifacts?.dotfiles_and_activity?.history_entries || 0) > 0) {
+    add("shell_activity", `Recovered ${snapshot.artifacts.dotfiles_and_activity.history_entries} shell history line(s).`, snapshot.artifacts.dotfiles_and_activity.suspicious_count > 0 ? "medium" : "info", snapshot.artifacts.dotfiles_and_activity.suspicious_commands || []);
+  }
+  if ((snapshot?.artifacts?.network_config?.bridges_count || 0) > 0) {
+    add("tor", `Recovered ${snapshot.artifacts.network_config.bridges_count} Tor bridge configuration line(s).`, "medium", snapshot.artifacts.network_config.bridges || []);
+  }
+  if (snapshot?.mountInfo?.encryptedPersistence) {
+    add("encryption", "Encrypted persistence appears mounted or unlocked in the acquired filesystem.", "medium", snapshot.mountInfo.encryptionHints || []);
+  }
+  return findings;
+}
+
+function useTailsMountSnapshot(imgPath) {
+  const [state, setState] = useState({ loading: true, error: null, snapshot: null });
+
+  useEffect(() => {
+    if (!imgPath) {
+      setState({ loading: false, error: null, snapshot: null });
+      return;
+    }
+    let cancelled = false;
+
+    async function load() {
+      setState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        const [osReleaseRaw, mountsRaw, torrcRaw, crypttabRaw, pconfRaw, rootBrowse, homeBrowse, persistenceStat, mapperStat] = await Promise.all([
+          safeReadMount(imgPath, "/etc/os-release"),
+          safeReadMount(imgPath, "/proc/mounts"),
+          safeReadMount(imgPath, "/etc/tor/torrc"),
+          safeReadMount(imgPath, "/etc/crypttab"),
+          safeReadMount(imgPath, "/live/persistence/TailsData_unlocked/persistence.conf"),
+          safeBrowseMount(imgPath, "/"),
+          safeBrowseMount(imgPath, "/home"),
+          safeStatMount(imgPath, "/live/persistence/TailsData_unlocked"),
+          safeStatMount(imgPath, "/dev/mapper/TailsData"),
+        ]);
+
+        const homes = (homeBrowse?.children || [])
+          .filter((entry) => entry?.is_dir)
+          .map((entry) => `/home/${entry.name}`);
+        if (homes.length === 0) homes.push("/home/amnesia");
+
+        const modules = parsePersistenceModulesText(pconfRaw?.content || "");
+        const osRelease = parseKeyValueText(osReleaseRaw?.content || "");
+        const torConfig = parseTorConfig(torrcRaw?.content || "");
+        const mountLines = String(mountsRaw?.content || "").split(/\r?\n/).filter(Boolean);
+        const encryptionHints = [
+          ...mountLines.filter((line) => /(dm-crypt|mapper|luks|tailsdata)/i.test(line)).slice(0, 6),
+          ...String(crypttabRaw?.content || "").split(/\r?\n/).filter((line) => /(luks|crypt|tailsdata)/i.test(line)).slice(0, 4),
+        ];
+
+        const homeSnapshots = await Promise.all(homes.map(async (home) => {
+          const [sshStat, gpgStat, electrumStat, persistentStat, bashStat, zshStat, torBrowserStat, torHiddenStat, mozillaStat] = await Promise.all([
+            safeStatMount(imgPath, `${home}/.ssh`),
+            safeStatMount(imgPath, `${home}/.gnupg`),
+            safeStatMount(imgPath, `${home}/.electrum`),
+            safeStatMount(imgPath, `${home}/Persistent`),
+            safeStatMount(imgPath, `${home}/.bash_history`),
+            safeStatMount(imgPath, `${home}/.zsh_history`),
+            safeStatMount(imgPath, `${home}/Tor Browser`),
+            safeStatMount(imgPath, `${home}/.tor-browser`),
+            safeStatMount(imgPath, `${home}/.mozilla`),
+          ]);
+
+          const [sshBrowse, gpgBrowse, persistentBrowse, walletBrowse, bashRead, zshRead] = await Promise.all([
+            sshStat?.exists && sshStat?.is_dir ? safeBrowseMount(imgPath, `${home}/.ssh`) : Promise.resolve({ children: [] }),
+            gpgStat?.exists && gpgStat?.is_dir ? safeBrowseMount(imgPath, `${home}/.gnupg`) : Promise.resolve({ children: [] }),
+            persistentStat?.exists && persistentStat?.is_dir ? safeBrowseMount(imgPath, `${home}/Persistent`) : Promise.resolve({ children: [] }),
+            electrumStat?.exists ? safeBrowseMount(imgPath, `${home}/.electrum/wallets`) : Promise.resolve({ children: [] }),
+            bashStat?.exists ? safeReadMount(imgPath, `${home}/.bash_history`) : Promise.resolve({ content: "" }),
+            zshStat?.exists ? safeReadMount(imgPath, `${home}/.zsh_history`) : Promise.resolve({ content: "" }),
+          ]);
+
+          return {
+            home,
+            sshKeys: (sshBrowse?.children || []).filter((entry) => /^(id_|authorized_keys|known_hosts)/i.test(entry.name || "")),
+            gpgKeys: (gpgBrowse?.children || []).filter((entry) => /(pubring|trustdb|private-keys|secring)/i.test(entry.name || "")),
+            browserProfiles: [torBrowserStat, torHiddenStat, mozillaStat].filter((entry) => entry?.exists).map((entry) => entry.path),
+            wallets: (walletBrowse?.children || []).filter((entry) => !entry?.is_dir).map((entry) => ({ type: "Electrum", name: entry.name, path: entry.path })),
+            persistentFiles: (persistentBrowse?.children || []).filter((entry) => ![".", ".."].includes(entry.name)).map((entry) => ({ ...entry, type_label: classifyPersistentFile(entry.name) })),
+            history: {
+              bash: extractHistoryInsights(bashRead?.content || ""),
+              zsh: extractHistoryInsights(zshRead?.content || ""),
+            },
+          };
+        }));
+
+        const sshKeys = homeSnapshots.flatMap((item) => item.sshKeys.map((entry) => ({ ...entry, home: item.home })));
+        const gpgKeys = homeSnapshots.flatMap((item) => item.gpgKeys.map((entry) => ({ ...entry, home: item.home })));
+        const browserProfiles = homeSnapshots.flatMap((item) => item.browserProfiles);
+        const wallets = homeSnapshots.flatMap((item) => item.wallets);
+        const persistentFiles = homeSnapshots.flatMap((item) => item.persistentFiles).slice(0, 60);
+        const historyLines = homeSnapshots.flatMap((item) => [...item.history.bash.lines, ...item.history.zsh.lines]);
+        const suspiciousCommands = homeSnapshots.flatMap((item) => [...item.history.bash.suspicious, ...item.history.zsh.suspicious]);
+        const byType = {};
+        for (const entry of persistentFiles) {
+          byType[entry.type_label] = (byType[entry.type_label] || 0) + 1;
+        }
+
+        const mountInfo = {
+          imgPath,
+          homeDirs: homes,
+          rootEntryCount: (rootBrowse?.children || []).length,
+          encryptedPersistence: Boolean(persistenceStat?.exists || mapperStat?.exists || encryptionHints.length > 0),
+          encryptionHints,
+          osRelease,
+          mountLines: mountLines.filter((line) => /(tails|persistence|mapper|dm-crypt|tor)/i.test(line)).slice(0, 8),
+        };
+
+        const artifacts = {
+          persistence_modules: {
+            enabled: modules,
+            total: modules.length,
+            high_risk_count: modules.filter((module) => module.risk_level === "high").length,
+          },
+          crypto_wallets: {
+            wallets,
+            total: wallets.length,
+            types: new Set(wallets.map((wallet) => wallet.type)).size,
+          },
+          identity_keys: {
+            ssh_keys: sshKeys,
+            gpg_keys: gpgKeys,
+            total_identities: sshKeys.length + gpgKeys.length,
+          },
+          tor_browser_artifacts: {
+            profiles: browserProfiles,
+            bookmarks: [],
+            extensions: [],
+            total: browserProfiles.length,
+          },
+          user_files: {
+            files: persistentFiles,
+            stats: { total: persistentFiles.length, by_type: byType },
+          },
+          dotfiles_and_activity: {
+            history_entries: historyLines.length,
+            suspicious_count: suspiciousCommands.length,
+            bash_history: historyLines.slice(-12),
+            suspicious_commands: suspiciousCommands.slice(-8),
+          },
+          network_config: {
+            bridges: torConfig.bridges,
+            bridges_count: torConfig.bridges.length,
+            custom_config: torConfig.custom.length,
+            hidden_services: torConfig.hidden,
+          },
+        };
+        artifacts.anonymity_score = computeAnonymityScoreFromArtifacts(artifacts, mountInfo);
+
+        const snapshot = {
+          mountInfo,
+          artifacts,
+        };
+        snapshot.findings = synthesizeTailsFindings(snapshot);
+
+        if (!cancelled) {
+          setState({ loading: false, error: null, snapshot });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setState({ loading: false, error: error?.message || String(error), snapshot: null });
+        }
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [imgPath]);
+
+  return state;
+}
+
+function TailsLiteBrowser({ imgPath }) {
+  const [path, setPath] = useState("/");
+  const [entries, setEntries] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [splitPct, setSplitPct] = useState(58);
+  const [isResizing, setIsResizing] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
+  const containerRef = useRef(null);
+
+  async function loadPath(p) {
+    setLoading(true);
+    try {
+      const dir = await apiBrowse(imgPath, p);
+      setEntries(dir.children || []);
+      setPath(p);
+    } catch (e) {
+      setEntries([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function selectFile(entry) {
+    setSelected(entry);
+    setPreview(null);
+    setPreviewError(null);
+    if (entry.type === "directory") {
+      loadPath(entry.path);
+    } else {
+      try {
+        setPreviewLoading(true);
+        const [meta, content] = await Promise.all([
+          apiStat(imgPath, entry.path),
+          apiRead(imgPath, entry.path),
+        ]);
+        setSelected({ ...entry, ...meta });
+        setPreview(content || null);
+      } catch (e) {
+        setPreviewError(String(e?.message || e || "Failed to load content"));
+      } finally {
+        setPreviewLoading(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    loadPath("/");
+    setSelected(null);
+    setPreview(null);
+    setPreviewError(null);
+  }, [imgPath]);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    function onMove(e) {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect || rect.width <= 0) return;
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setSplitPct(Math.max(26, Math.min(78, pct)));
+    }
+
+    function onUp() {
+      setIsResizing(false);
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (!entries || entries.length === 0) {
+      setStats(null);
+      return;
+    }
+    const totalSize = entries.reduce((sum, e) => sum + (e.size || 0), 0);
+    const dirCount = entries.filter((e) => e.type === "directory").length;
+    const fileCount = entries.filter((e) => e.type !== "directory").length;
+    const extMap = new Map();
+    for (const e of entries) {
+      if (e.type !== "directory") {
+        const ext = e.name?.split(".").pop()?.toLowerCase() || "no-ext";
+        extMap.set(ext, (extMap.get(ext) || 0) + 1);
+      }
+    }
+    const suidCount = entries.filter((e) => e.is_suid || e.is_sgid).length;
+    const rootOwned = entries.filter((e) => e.uid === 0).length;
+    const executable = entries.filter((e) => e.type === "file" && (parseInt(e.mode_octal || "0", 8) & 0o111) !== 0).length;
+
+    setStats({
+      totalSize,
+      dirCount,
+      fileCount,
+      topExts: Array.from(extMap.entries()).slice(0, 5),
+      suidCount,
+      rootOwned,
+      executable,
+    });
+  }, [entries]);
+
+  const fmtSize = (bytes) => {
+    if (!bytes) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return (bytes / Math.pow(k, i)).toFixed(1) + " " + sizes[i];
+  };
+
+  return (
+    <div className="tails-lite-browser">
+      <div className="tlb-header">
+        <span className="tlb-path" title={path}>{path}</span>
+        {path !== "/" && (
+          <button className="btn-secondary btn-xs" onClick={() => loadPath(path.replace(/\/[^/]*\/?$/, "") || "/")}>
+            <ChevronUp size={10} /> Up
+          </button>
+        )}
+      </div>
+
+      <div
+        className="tlb-container"
+        ref={containerRef}
+        style={{ gridTemplateColumns: `minmax(260px, ${splitPct}%) 8px minmax(300px, ${100 - splitPct}%)` }}
+      >
+        {/* File list */}
+        <div className="tlb-list">
+          {loading && <div className="tlb-empty"><RefreshCw size={14} className="spin" /> Loading…</div>}
+          {!loading && (!entries || entries.length === 0) && <div className="tlb-empty">Empty directory</div>}
+          {!loading && entries && entries.length > 0 && (
+            <div className="tlb-files">
+              {entries.map((e) => (
+                <div
+                  key={e.path}
+                  className={`tlb-file-row ${selected?.path === e.path ? "selected" : ""}`}
+                  onClick={() => selectFile(e)}
+                  onDoubleClick={() => e.type === "directory" && loadPath(e.path)}
+                >
+                  <FileTypeIcon type={e.type} name={e.name} />
+                  <span className="tlb-file-name">{e.name}</span>
+                  <span className="tlb-file-size">{fmtSize(e.size)}</span>
+                  {e.is_suid && <span className="sev-badge" style={{ fontSize: "9px", background: "#dc2626" }}>SUID</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div
+          className={`tlb-divider ${isResizing ? "active" : ""}`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setIsResizing(true);
+          }}
+          title="Drag to resize panes"
+        />
+
+        {/* Stats + details */}
+        <div className="tlb-details">
+          {stats && (
+            <>
+              <div className="tlb-stats-grid">
+                <div className="tlb-stat"><strong>{stats.fileCount}</strong><span>Files</span></div>
+                <div className="tlb-stat"><strong>{stats.dirCount}</strong><span>Dirs</span></div>
+                <div className="tlb-stat"><strong>{fmtSize(stats.totalSize)}</strong><span>Total Size</span></div>
+              </div>
+              <div className="tlb-stats-grid">
+                <div className="tlb-stat"><strong>{stats.executable}</strong><span>Executable</span></div>
+                <div className="tlb-stat"><strong>{stats.rootOwned}</strong><span>Root Owned</span></div>
+                <div className="tlb-stat"><strong>{stats.suidCount}</strong><span>SUID/SGID</span></div>
+              </div>
+              {stats.topExts.length > 0 && (
+                <div className="tlb-exts">
+                  <strong style={{ fontSize: "11px", display: "block", marginBottom: "4px" }}>Top Extensions</strong>\n                  {stats.topExts.map(([ext, count]) => (
+                    <span key={ext} className="tlb-ext-tag">.{ext} ({count})</span>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {selected && (
+            <div className="tlb-file-info">
+              <strong style={{ fontSize: "11px", display: "block", marginBottom: "4px" }}>File Details</strong>
+              <table className="rp-table" style={{ fontSize: "11px" }}>
+                <tbody>
+                  {selected.name && <tr><td>Name</td><td>{selected.name}</td></tr>}
+                  {selected.path && <tr><td>Path</td><td><code className="tlb-path-code">{selected.path}</code></td></tr>}
+                  {selected.size_human && <tr><td>Size</td><td>{selected.size_human}</td></tr>}
+                  {selected.mtime && <tr><td>Modified</td><td>{selected.mtime}</td></tr>}
+                  {selected.mode && <tr><td>Mode</td><td><code>{selected.mode}</code></td></tr>}
+                  {selected.uid != null && <tr><td>UID</td><td>{selected.uid}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {selected && selected.type !== "directory" && (
+            <div className="tlb-file-content">
+              <strong style={{ fontSize: "11px", display: "block", marginBottom: "6px" }}>
+                Content Preview {preview?.encoding ? `(${preview.encoding})` : ""}
+              </strong>
+              {previewLoading && <div className="usb-empty">Loading content preview…</div>}
+              {!previewLoading && previewError && <div className="dlg-error">{previewError}</div>}
+              {!previewLoading && !previewError && !preview?.content && (
+                <div className="usb-empty">No previewable content.</div>
+              )}
+              {!previewLoading && !previewError && preview?.content && (
+                <pre className={`tlb-content-pre ${preview?.is_binary ? "is-binary" : ""}`}>{preview.content}</pre>
+              )}
+              {!previewLoading && !previewError && preview?.truncated && (
+                <div className="usb-empty">Preview truncated to safe limit.</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TailsAnalyticsPanel({ artifacts, report, mountInfo, loading, error }) {
+  const artifacts_data = artifacts || {};
+  const modules = artifacts_data.persistence_modules || {};
+  const wallets = artifacts_data.crypto_wallets || {};
+  const identities = artifacts_data.identity_keys || {};
+  const browser_artifacts = artifacts_data.tor_browser_artifacts || {};
+  const user_files = artifacts_data.user_files || {};
+  const dotfiles = artifacts_data.dotfiles_and_activity || {};
+  const network = artifacts_data.network_config || {};
+  const anon_score = artifacts_data.anonymity_score || {};
+
+  const score = anon_score.score || 0;
+  const risk_level = anon_score.risk_level || "low";
+  const artifactSnapshot = {
+    modules: modules.total || 0,
+    wallets: wallets.total || 0,
+    identities: identities.total_identities || ((identities.ssh_keys?.length || 0) + (identities.gpg_keys?.length || 0)),
+    browser: browser_artifacts.total || 0,
+    files: user_files.stats?.total || 0,
+    history: dotfiles.history_entries || 0,
+    bridges: network.bridges_count || 0,
+  };
+  const hasStructuredArtifacts = Object.values(artifactSnapshot).some((v) => Number(v) > 0);
+
+  return (
+    <div className="tails-analytics">
+      {(loading || error) && (
+        <div className="ta-empty">
+          <strong>{loading ? "Inspecting mounted filesystem…" : "Mount inspection failed"}</strong>
+          <p>{loading ? "Gathering persistence, Tor, wallet, key, and command-history evidence from the mount point." : error}</p>
+        </div>
+      )}
+
+      {/* Anonymity Leakage Score */}
+      <div className="ta-section">
+        <h3><AlertTriangle size={16} /> Anonymity Leakage Risk Score</h3>
+        <div className="ta-score-card">
+          <div className="ta-score-big" style={{
+            color: risk_level === "critical" ? "#dc2626" : risk_level === "high" ? "#ea580c" : risk_level === "medium" ? "#f59e0b" : "#10b981"
+          }}>
+            {score} / 100
+          </div>
+          <div className="ta-score-label">{risk_level.toUpperCase()} RISK</div>
+          {anon_score.primary_leaks && anon_score.primary_leaks.length > 0 && (
+            <div className="ta-score-leaks">
+              <strong>Privacy Leaks Detected:</strong>
+              {anon_score.primary_leaks.map((leak, i) => (
+                <div key={i} style={{ fontSize: "12px", color: "#666", marginTop: "4px" }}>• {leak}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="ta-section">
+        <h3><BarChart3 size={16} /> Artifact Snapshot</h3>
+        <div className="ta-grid ta-grid-compact">
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Persistence Modules</div><div className="ta-stat-value">{artifactSnapshot.modules}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Wallet Artifacts</div><div className="ta-stat-value">{artifactSnapshot.wallets}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Identity Keys</div><div className="ta-stat-value">{artifactSnapshot.identities}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Browser Artifacts</div><div className="ta-stat-value">{artifactSnapshot.browser}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Persistent Files</div><div className="ta-stat-value">{artifactSnapshot.files}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">History Entries</div><div className="ta-stat-value">{artifactSnapshot.history}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Bridge Configs</div><div className="ta-stat-value">{artifactSnapshot.bridges}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Tails Findings</div><div className="ta-stat-value">{report?.tails?.length || 0}</div></div>
+        </div>
+      </div>
+
+      <div className="ta-section">
+        <h3><Lock size={16} /> Mount and Encryption Evidence</h3>
+        <div className="ta-grid ta-grid-compact">
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Encrypted Persistence</div><div className="ta-stat-value">{mountInfo?.encryptedPersistence ? "Yes" : "No"}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Home Directories</div><div className="ta-stat-value">{mountInfo?.homeDirs?.length || 0}</div></div>
+          <div className="ta-card ta-stat-card"><div className="ta-card-type">Root Entries</div><div className="ta-stat-value">{mountInfo?.rootEntryCount || 0}</div></div>
+        </div>
+        {((mountInfo?.encryptionHints?.length || 0) > 0 || (mountInfo?.mountLines?.length || 0) > 0) && (
+          <div className="ta-history">
+            <strong style={{ fontSize: "11px" }}>Recovered Mount Evidence</strong>
+            {[...(mountInfo?.encryptionHints || []), ...(mountInfo?.mountLines || [])].slice(0, 8).map((line, index) => (
+              <div key={`${line}-${index}`} style={{ fontSize: "11px", fontFamily: "monospace", color: "#334155", marginTop: "4px", paddingLeft: "8px" }}>
+                <code className="code-block">{line}</code>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {!hasStructuredArtifacts && (
+        <div className="ta-empty">
+          <strong>No structured Tails artifacts are available in this report yet.</strong>
+          <p>This can happen for older reports generated before artifact extraction was added. Re-run analysis on this source to populate Analytics.</p>
+        </div>
+      )}
+
+      {/* Persistence Modules */}
+      {modules.enabled && modules.enabled.length > 0 && (
+        <div className="ta-section">
+          <h3><Lock size={16} /> Persistence Modules ({modules.total})</h3>
+          <div className="ta-grid">
+            {modules.enabled.map((mod, i) => (
+              <div key={i} className="ta-card">
+                <div className="ta-card-type" style={{ color: mod.risk_level === "high" ? "#dc2626" : "#f59e0b" }}>
+                  {mod.type}
+                </div>
+                <div className="ta-card-detail">{mod.destination}</div>
+                <div className="ta-card-meta">Risk: <strong>{mod.risk_level}</strong></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cryptocurrency Wallets */}
+      {wallets.wallets && wallets.wallets.length > 0 && (
+        <div className="ta-section">
+          <h3><DollarSign size={16} /> Cryptocurrency Wallets ({wallets.total})</h3>
+          <div className="ta-grid">
+            {wallets.wallets.map((wallet, i) => (
+              <div key={i} className="ta-card">
+                <div className="ta-card-type">{wallet.type}</div>
+                <div className="ta-card-detail">{wallet.name}</div>
+                <div className="ta-card-meta">{wallet.path}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Identity Keys */}
+      {(identities.ssh_keys?.length > 0 || identities.gpg_keys?.length > 0) && (
+        <div className="ta-section">
+          <h3><Key size={16} /> Cryptographic Identity Keys</h3>
+          <div className="ta-grid">
+            {identities.ssh_keys?.map((key, i) => (
+              <div key={`ssh-${i}`} className="ta-card">
+                <div className="ta-card-type">SSH Key</div>
+                <div className="ta-card-detail">{key.name}</div>
+                <div className="ta-card-meta">High Risk</div>
+              </div>
+            ))}
+            {identities.gpg_keys?.map((key, i) => (
+              <div key={`gpg-${i}`} className="ta-card">
+                <div className="ta-card-type">GPG Key</div>
+                <div className="ta-card-detail">{key.name}</div>
+                <div className="ta-card-meta">High Risk</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tor Browser Artifacts */}
+      {browser_artifacts.total > 0 && (
+        <div className="ta-section">
+          <h3><Globe size={16} /> Tor Browser Artifacts</h3>
+          <p style={{ fontSize: "12px", color: "#666", marginBottom: "12px" }}>
+            Profiles: {browser_artifacts.profiles?.length || 0} | 
+            Artifacts: {browser_artifacts.bookmarks?.length || 0}
+          </p>
+        </div>
+      )}
+
+      {/* Dotfiles & Activity */}
+      {dotfiles.history_entries > 0 && (
+        <div className="ta-section">
+          <h3><Terminal size={16} /> Command History & Activity</h3>
+          <p style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>
+            <strong>Commands logged:</strong> {dotfiles.history_entries} | 
+            <strong style={{ marginLeft: "12px" }}>Suspicious:</strong> {dotfiles.suspicious_count}
+          </p>
+          {dotfiles.suspicious_commands && dotfiles.suspicious_commands.length > 0 && (
+            <div className="ta-history">
+              <strong style={{ fontSize: "11px" }}>Notable Commands:</strong>
+              {dotfiles.suspicious_commands.slice(0, 5).map((cmd, i) => (
+                <div key={i} style={{ fontSize: "11px", fontFamily: "monospace", color: "#dc2626", marginTop: "4px", paddingLeft: "8px" }}>
+                  <code className="code-block">{cmd.substring(0, 100)}</code>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Network Configuration */}
+      {network.bridges_count > 0 && (
+        <div className="ta-section">
+          <h3><Network size={16} /> Tor Network Configuration</h3>
+          <p style={{ fontSize: "12px", color: "#666" }}>
+            Bridges: {network.bridges_count} | Custom Config: {network.custom_config}
+          </p>
+        </div>
+      )}
+
+      {/* User Files Summary */}
+      {user_files.stats?.total > 0 && (
+        <div className="ta-section">
+          <h3><Files size={16} /> User Files in Persistent Storage</h3>
+          <div className="ta-grid">
+            {Object.entries(user_files.stats.by_type || {}).map(([type, count]) => (
+              <div key={type} className="ta-card ta-stat-card">
+                <div className="ta-card-type">{type}</div>
+                <div style={{ fontSize: "20px", fontWeight: "bold", color: "#1f2937", textAlign: "center", marginTop: "8px" }}>
+                  {count}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TailsDeepIndicatorsTab({ deepScan }) {
+  const artifacts = deepScan?.artifacts || {};
+  const textScan = artifacts?.text_scan || {};
+  const keyWalletBrowser = artifacts?.key_wallet_browser || {};
+  const persistence = artifacts?.persistence || {};
+
+  if (!deepScan || !artifacts || Object.keys(artifacts).length === 0) {
+    return (
+      <div className="tab-content">
+        <div className="empty-state">
+          <AlertTriangle size={24} />
+          <p>Deep scan indicators are not available in this report. Re-run Tails Deep analysis.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tab-content">
+      <div className="tails-overview-panel" style={{ marginBottom: 12 }}>
+        <h4>Deep Indicator Summary</h4>
+        <table className="rp-table">
+          <tbody>
+            <tr><td>Onion Addresses</td><td>{(textScan?.onion_addresses || []).length}</td></tr>
+            <tr><td>Suspicious Lines</td><td>{(textScan?.suspicious_lines || []).length}</td></tr>
+            <tr><td>Bridge Lines</td><td>{(textScan?.bridge_related_lines || []).length}</td></tr>
+            <tr><td>Hidden Service Lines</td><td>{(textScan?.hidden_service_lines || []).length}</td></tr>
+            <tr><td>Wallet Files</td><td>{(keyWalletBrowser?.wallet_files || []).length}</td></tr>
+            <tr><td>Identity/Key Files</td><td>{(keyWalletBrowser?.key_files || []).length}</td></tr>
+            <tr><td>Browser Artifact Files</td><td>{(keyWalletBrowser?.browser_files || []).length}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="tails-overview-panel" style={{ marginBottom: 12 }}>
+        <h4>Onion Addresses</h4>
+        {(textScan?.onion_addresses || []).length === 0 ? <p className="usb-empty">No onion indicators.</p> : (
+          <ul className="evidence-list">
+            {(textScan?.onion_addresses || []).map((v, i) => <li key={i}><code>{v}</code></li>)}
+          </ul>
+        )}
+      </div>
+
+      <div className="tails-overview-panel" style={{ marginBottom: 12 }}>
+        <h4>Persistence Modules</h4>
+        {(persistence?.modules || []).length === 0 ? <p className="usb-empty">No modules parsed.</p> : (
+          <table className="rp-table">
+            <thead><tr><th>Source</th><th>Destination</th></tr></thead>
+            <tbody>
+              {(persistence?.modules || []).map((m, i) => (
+                <tr key={`${m.source}-${i}`}>
+                  <td><code>{m.source}</code></td>
+                  <td><code>{m.destination}</code></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="tails-overview-panel" style={{ marginBottom: 12 }}>
+        <h4>Suspicious Command Traces</h4>
+        {(textScan?.suspicious_lines || []).length === 0 ? <p className="usb-empty">No suspicious lines recovered.</p> : (
+          <table className="rp-table">
+            <thead><tr><th>Path</th><th>Line</th></tr></thead>
+            <tbody>
+              {(textScan?.suspicious_lines || []).map((entry, i) => (
+                <tr key={`${entry.path}-${i}`}>
+                  <td><code>{entry.path}</code></td>
+                  <td><code>{entry.line}</code></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="tails-overview-panel">
+        <h4>Wallet / Key / Browser Files</h4>
+        <table className="rp-table">
+          <thead><tr><th>Category</th><th>Path</th><th>Size</th></tr></thead>
+          <tbody>
+            {(keyWalletBrowser?.wallet_files || []).map((f, i) => (
+              <tr key={`w-${i}`}><td>Wallet</td><td><code>{f.path}</code></td><td>{f.size ?? "-"}</td></tr>
+            ))}
+            {(keyWalletBrowser?.key_files || []).map((f, i) => (
+              <tr key={`k-${i}`}><td>Identity Key</td><td><code>{f.path}</code></td><td>{f.size ?? "-"}</td></tr>
+            ))}
+            {(keyWalletBrowser?.browser_files || []).map((f, i) => (
+              <tr key={`b-${i}`}><td>Browser</td><td><code>{f.path}</code></td><td>{f.size ?? "-"}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TailsCollectedEvidenceTab({ deepScan }) {
+  const artifacts = deepScan?.artifacts || {};
+  const collection = artifacts?.evidence_collection || {};
+  const hashes = artifacts?.largest_file_hash_samples || [];
+  const fs = artifacts?.filesystem_inventory || {};
+
+  if (!deepScan || !collection?.enabled) {
+    return (
+      <div className="tab-content">
+        <div className="empty-state">
+          <Archive size={24} />
+          <p>Collected evidence bundle is not available for this report.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="tab-content">
+      <div className="tails-overview-panel" style={{ marginBottom: 12 }}>
+        <h4>Evidence Collection Metadata</h4>
+        <table className="rp-table">
+          <tbody>
+            <tr><td>Collected Files</td><td>{collection.copied_count ?? 0}</td></tr>
+            <tr><td>Skipped Files</td><td>{collection.skipped_count ?? 0}</td></tr>
+            <tr><td>Copied Bytes</td><td>{collection.copied_bytes ?? 0}</td></tr>
+            <tr><td>Collection Directory</td><td><code>{collection.collect_dir || "-"}</code></td></tr>
+            <tr><td>Manifest Path</td><td><code>{collection.manifest_path || "-"}</code></td></tr>
+            <tr><td>Collected Files Root</td><td><code>{collection.collected_files_root || "-"}</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div className="tails-overview-panel" style={{ marginBottom: 12 }}>
+        <h4>Top Largest Files (Deep Inventory)</h4>
+        <table className="rp-table">
+          <thead><tr><th>Path</th><th>Size</th></tr></thead>
+          <tbody>
+            {(fs?.largest_files || []).slice(0, 30).map((f, i) => (
+              <tr key={`${f.path}-${i}`}>
+                <td><code>{f.path}</code></td>
+                <td>{f.size ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="tails-overview-panel">
+        <h4>Largest File Hash Samples</h4>
+        <table className="rp-table">
+          <thead><tr><th>Path</th><th>SHA-256</th></tr></thead>
+          <tbody>
+            {hashes.map((h, i) => (
+              <tr key={`${h.path}-${i}`}>
+                <td><code>{h.path}</code></td>
+                <td><code>{h.sha256_first_bytes || "-"}</code></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function TailsCaseWorkspace({ report, imgPath, caseName, onBackToCase, onExportJson, onExportHtml, onExportPdf, onReanalyze, reanalyzing }) {
+  const [tab, setTab] = useState("overview");
+  const findings = report?.tails || [];
+  const summary = report?.summary || {};
+  const tails_artifacts = report?.tails_artifacts || {};
+  const { loading: mountLoading, error: mountError, snapshot: mountSnapshot } = useTailsMountSnapshot(imgPath);
+  const effectiveArtifacts = useMemo(
+    () => (hasTailsArtifactData(mountSnapshot?.artifacts) ? mountSnapshot.artifacts : tails_artifacts),
+    [mountSnapshot, tails_artifacts]
+  );
+  const effectiveFindings = useMemo(
+    () => synthesizeTailsFindings(mountSnapshot, findings),
+    [mountSnapshot, findings]
+  );
+  const mountInfo = mountSnapshot?.mountInfo || {};
+  const deepScan = tails_artifacts?.deep_scan || effectiveArtifacts?.deep_scan || null;
+  const analyticsCount = useMemo(() => {
+    const modules = effectiveArtifacts?.persistence_modules?.total || 0;
+    const wallets = effectiveArtifacts?.crypto_wallets?.total || 0;
+    const keys = effectiveArtifacts?.identity_keys?.total_identities || 0;
+    const browser = effectiveArtifacts?.tor_browser_artifacts?.total || 0;
+    const files = effectiveArtifacts?.user_files?.stats?.total || 0;
+    const deepSignals = (deepScan?.artifacts?.text_scan?.onion_addresses?.length || 0)
+      + (deepScan?.artifacts?.text_scan?.suspicious_lines?.length || 0);
+    return modules + wallets + keys + browser + files + deepSignals;
+  }, [effectiveArtifacts, deepScan]);
+  const byCategory = useMemo(() => {
+    const map = new Map();
+    for (const f of effectiveFindings) {
+      const key = f?.category || "other";
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [effectiveFindings]);
+
+  return (
+    <div className="tails-workspace">
+      <div className="tails-workspace-head">
+        <div className="tails-workspace-title-wrap">
+          <div className="tails-workspace-kicker">CASE-SCOPED TAILS ANALYSIS</div>
+          <div className="tails-workspace-title"><TailsLogo withText /> Mounted Source Investigation</div>
+          <div className="tails-workspace-sub">
+            {caseName ? `Case: ${caseName}` : "Case source"} · {imgPath || "-"}
+          </div>
+        </div>
+        <div className="tails-workspace-actions">
+          <button className="btn-secondary btn-sm" onClick={onBackToCase}><ChevronRight size={12} style={{ transform: "rotate(180deg)" }} /> Back to Case</button>
+          <button className="btn-secondary btn-sm" onClick={onReanalyze} disabled={reanalyzing} title="Re-run analysis on the same source">
+            {reanalyzing ? <><Loader2 size={12} className="spin" /> Reanalyzing...</> : <><RefreshCw size={12} /> Reanalyze</>}
+          </button>
+          <button className="btn-secondary btn-sm" onClick={onExportJson}><FolderOpen size={12} /> JSON</button>
+          <button className="btn-secondary btn-sm" onClick={onExportHtml}><FileText size={12} /> HTML</button>
+          <button className="btn-secondary btn-sm" onClick={onExportPdf}><Download size={12} /> PDF</button>
+        </div>
+      </div>
+
+      <div className="tails-workspace-tabs">
+        {[
+          ["overview", Activity, "Overview", effectiveFindings.length],
+          ["analytics", BarChart3, "Artifact Analytics", analyticsCount],
+          ["deep", AlertTriangle, "Deep Indicators", deepScan?.artifacts?.text_scan?.suspicious_lines?.length || 0],
+          ["evidence_pack", Archive, "Evidence Pack", deepScan?.artifacts?.evidence_collection?.copied_count || 0],
+          ["browser", FolderOpenIcon, "File Browser", null],
+          ["findings", Sailboat, "Tails Findings", effectiveFindings.length],
+        ].map(([id, Icon, label, count]) => (
+          <button key={id} className={`case-tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>
+            <Icon size={13} /> {label}
+            {count != null && <span className="tw-tab-count">{count}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="tails-workspace-body">
+        {tab === "overview" && (
+          <div className="tails-overview-grid">
+            <div className="tails-kpi-card"><strong>{effectiveFindings.length}</strong><span>Tails Findings</span></div>
+            <div className="tails-kpi-card"><strong>{effectiveFindings.filter((item) => ["high", "critical"].includes(item?.severity)).length}</strong><span>High Severity</span></div>
+            <div className="tails-kpi-card"><strong>{effectiveArtifacts?.persistence_modules?.total || 0}</strong><span>Persistence Modules</span></div>
+            <div className="tails-kpi-card"><strong>{effectiveArtifacts?.crypto_wallets?.total || 0}</strong><span>Wallet Artifacts</span></div>
+            <div className="tails-kpi-card"><strong>{effectiveArtifacts?.identity_keys?.total_identities || 0}</strong><span>Identity Keys</span></div>
+            <div className="tails-kpi-card"><strong>{effectiveArtifacts?.anonymity_score?.score || 0}</strong><span>Leakage Score</span></div>
+
+            <div className="tails-overview-panel">
+              <h4>Source and Mount Context</h4>
+              <table className="rp-table">
+                <tbody>
+                  <tr><td>Detected OS</td><td>{mountInfo?.osRelease?.PRETTY_NAME || report?.os_info?.name || "Unknown"}</td></tr>
+                  <tr><td>OS ID</td><td>{mountInfo?.osRelease?.ID || report?.os_info?.id || "-"}</td></tr>
+                  <tr><td>Mounted Path</td><td>{imgPath || "-"}</td></tr>
+                  <tr><td>Home Directories</td><td>{mountInfo?.homeDirs?.join(", ") || "/home/amnesia"}</td></tr>
+                  <tr><td>Encrypted Persistence</td><td>{mountInfo?.encryptedPersistence ? "Detected / Unlocked" : "No evidence recovered"}</td></tr>
+                  <tr><td>Analysis Mode</td><td>{summary?.analysis_mode || "-"}</td></tr>
+                  <tr><td>Extraction Method</td><td>{report?.evidence_provenance?.[0]?.extraction_method || "-"}</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="tails-overview-panel">
+              <h4>Mount-Derived Highlights</h4>
+              {mountLoading ? (
+                <div className="cases-empty" style={{ minHeight: 120 }}><p>Inspecting mount point…</p></div>
+              ) : mountError ? (
+                <div className="cases-empty" style={{ minHeight: 120 }}><p>{mountError}</p></div>
+              ) : (
+                <table className="rp-table">
+                  <tbody>
+                    <tr><td>Browser Profiles</td><td>{effectiveArtifacts?.tor_browser_artifacts?.profiles?.length || 0}</td></tr>
+                    <tr><td>Persistent Files</td><td>{effectiveArtifacts?.user_files?.stats?.total || 0}</td></tr>
+                    <tr><td>History Entries</td><td>{effectiveArtifacts?.dotfiles_and_activity?.history_entries || 0}</td></tr>
+                    <tr><td>Suspicious Commands</td><td>{effectiveArtifacts?.dotfiles_and_activity?.suspicious_count || 0}</td></tr>
+                    <tr><td>Tor Bridges</td><td>{effectiveArtifacts?.network_config?.bridges_count || 0}</td></tr>
+                    <tr><td>Hidden Service Lines</td><td>{effectiveArtifacts?.network_config?.hidden_services?.length || 0}</td></tr>
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="tails-overview-panel">
+              <h4>Persistence and Identity Evidence</h4>
+              {(effectiveArtifacts?.persistence_modules?.enabled?.length || 0) === 0 && (effectiveArtifacts?.identity_keys?.total_identities || 0) === 0 ? (
+                <div className="cases-empty" style={{ minHeight: 120 }}>
+                  <p>No persistence modules or identity keys were recovered from the mounted source.</p>
+                </div>
+              ) : (
+                <table className="rp-table">
+                  <thead><tr><th>Artifact</th><th>Count / Detail</th></tr></thead>
+                  <tbody>
+                    {(effectiveArtifacts?.persistence_modules?.enabled || []).slice(0, 6).map((module) => (
+                      <tr key={module.destination}><td>{module.type}</td><td>{module.destination}</td></tr>
+                    ))}
+                    <tr><td>SSH Keys</td><td>{effectiveArtifacts?.identity_keys?.ssh_keys?.length || 0}</td></tr>
+                    <tr><td>GPG Keys</td><td>{effectiveArtifacts?.identity_keys?.gpg_keys?.length || 0}</td></tr>
+                    <tr><td>Wallet Files</td><td>{effectiveArtifacts?.crypto_wallets?.total || 0}</td></tr>
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="tails-overview-panel">
+              <h4>Findings Distribution</h4>
+              {byCategory.length === 0 ? (
+                <div className="cases-empty" style={{ minHeight: 120 }}>
+                  <p>No Tails-specific findings recorded for this source.</p>
+                </div>
+              ) : (
+                <table className="rp-table">
+                  <thead><tr><th>Category</th><th>Count</th></tr></thead>
+                  <tbody>
+                    {byCategory.map(([cat, count]) => (
+                      <tr key={cat}><td>{TAILS_CATEGORY_LABELS[cat] || cat}</td><td>{count}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === "browser" && <TailsLiteBrowser imgPath={imgPath} />}
+
+        {tab === "analytics" && <TailsAnalyticsPanel artifacts={effectiveArtifacts} report={report} mountInfo={mountInfo} loading={mountLoading} error={mountError} />}
+
+        {tab === "deep" && <TailsDeepIndicatorsTab deepScan={deepScan} />}
+
+        {tab === "evidence_pack" && <TailsCollectedEvidenceTab deepScan={deepScan} />}
+
+        {tab === "findings" && <TailsTab findings={effectiveFindings} summary={summary} />}
+      </div>
+    </div>
+  );
+}
+
 function ReportPanel({ report, liveInfo, imgPath, onClear, onExportJson, onExportHtml, onExportPdf, onExportExecutivePdf, onReanalyze, reanalyzing }) {
   const [tab, setTab] = useState("summary");
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false);
@@ -4804,18 +5951,7 @@ function ReportPanel({ report, liveInfo, imgPath, onClear, onExportJson, onExpor
   const moreMeasureRef = useRef(null);
   const { summary } = report;
   const isLive = !!liveInfo;
-  const isTailsReport = useMemo(() => {
-    const osName = String(report?.os_info?.name || "").toLowerCase();
-    const osId = String(report?.os_info?.id || "").toLowerCase();
-    const tags = (report?.os_info?.variant_tags || []).map((t) => String(t).toLowerCase());
-    const analysisMode = String(report?.summary?.analysis_mode || "").toLowerCase();
-    return (
-      osName.includes("tails") ||
-      osId.includes("tails") ||
-      tags.some((t) => t.includes("tails")) ||
-      analysisMode === "tails_os"
-    );
-  }, [report]);
+  const isTailsReport = useMemo(() => isTailsFocusedReport(report), [report]);
 
   const rangeMs = useMemo(() => {
     const fromMs = dateRangeApplied.from ? parseDateToMs(dateRangeApplied.from) : null;
@@ -5199,7 +6335,7 @@ function AddSourceDialog({ onClose, caseId, onSuccess, preferredMode = "normal",
     setLoadingMode(mode); setErr(null);
     try {
       const res = mode === "tails"
-        ? await apiCaseAnalyzeTails(caseId, path)
+        ? await apiCaseAnalyzeTailsDeep(caseId, path)
         : await apiCaseAnalyze(caseId, path);
       onSuccess(res.source, res.report, mode);
       onClose();
@@ -6618,7 +7754,12 @@ export default function App() {
     setReanalyzing(true);
     setStatus("Reanalyzing…");
     try {
-      const r = imgPath === "/" ? await apiAnalyzeLive() : await apiAnalyze(imgPath);
+      const tailsMode = isTailsFocusedReport(report);
+      const r = imgPath === "/"
+        ? await apiAnalyzeLive()
+        : tailsMode
+          ? (activeCase ? (await apiCaseAnalyzeTailsDeep(activeCase.id, imgPath)).report : await apiAnalyzeTailsDeep(imgPath))
+          : await apiAnalyze(imgPath);
       handleResult(r, imgPath);
       setStatus(`Reanalysis complete — ${r.summary?.total_high ?? 0} high-severity indicator(s)`);
     } catch (e) {
@@ -6861,18 +8002,32 @@ export default function App() {
           {view === "memory" && <MemoryAnalyser />}
 
           {view === "report" && report && (
-            <ReportPanel
-              report={report}
-              liveInfo={imgPath === "/" || report?.summary?.analysis_mode === "remote_ssh_live" ? liveInfo : null}
-              imgPath={imgPath}
-              onClear={() => handleAction("clear")}
-              onExportJson={() => downloadJSON(report)}
-              onExportHtml={() => exportComprehensive("html")}
-              onExportPdf={() => exportComprehensive("pdf")}
-              onExportExecutivePdf={() => exportComprehensive("pdf", "executive")}
-              onReanalyze={handleReanalyze}
-              reanalyzing={reanalyzing}
-            />
+            activeCase && isTailsFocusedReport(report) ? (
+              <TailsCaseWorkspace
+                report={report}
+                imgPath={imgPath}
+                caseName={activeCase?.name}
+                onBackToCase={() => setView("case")}
+                onExportJson={() => downloadJSON(report)}
+                onExportHtml={() => exportComprehensive("html")}
+                onExportPdf={() => exportComprehensive("pdf")}
+                onReanalyze={handleReanalyze}
+                reanalyzing={reanalyzing}
+              />
+            ) : (
+              <ReportPanel
+                report={report}
+                liveInfo={imgPath === "/" || report?.summary?.analysis_mode === "remote_ssh_live" ? liveInfo : null}
+                imgPath={imgPath}
+                onClear={() => handleAction("clear")}
+                onExportJson={() => downloadJSON(report)}
+                onExportHtml={() => exportComprehensive("html")}
+                onExportPdf={() => exportComprehensive("pdf")}
+                onExportExecutivePdf={() => exportComprehensive("pdf", "executive")}
+                onReanalyze={handleReanalyze}
+                reanalyzing={reanalyzing}
+              />
+            )
           )}
         </div>
       </div>

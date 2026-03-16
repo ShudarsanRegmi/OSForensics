@@ -1,5 +1,6 @@
 # manually added
 mnt/
+tails_collected*
 
 # Python-generated files
 __pycache__/
