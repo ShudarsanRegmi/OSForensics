@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CyberSheild 2026 - OSForensics Project Report</title>
+  <style>
+    :root {
+      --ink: #1d2731;
+      --muted: #5a6a78;
+      --line: #cfd8df;
+      --paper: #fbfbf8;
+      --accent: #113a5d;
+      --accent-soft: #eaf1f7;
+    }
+
+    @page {
+      size: A4;
+      margin: 20mm 16mm 20mm 16mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Georgia", "Times New Roman", serif;
+      line-height: 1.45;
+      font-size: 12pt;
+    }
+
+    .book {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .page {
+      background: #fff;
+      border: 1px solid var(--line);
+      padding: 28px 32px;
+      margin: 18px 0;
+      min-height: 1030px;
+      position: relative;
+    }
+
+    .cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 1030px;
+      border: 2px solid var(--accent);
+      background: linear-gradient(180deg, #f7fbff 0%, #ffffff 45%, #f9fbfd 100%);
+    }
+
+    .cover-top {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 16px;
+    }
+
+    .cover-title {
+      font-size: 34pt;
+      line-height: 1.08;
+      letter-spacing: 0.4px;
+      color: var(--accent);
+      margin: 0;
+      text-transform: uppercase;
+    }
+
+    .cover-subtitle {
+      margin-top: 14px;
+      font-size: 15pt;
+      color: var(--muted);
+      letter-spacing: 0.2px;
+    }
+
+    .hackathon-strip {
+      margin-top: 18px;
+      padding: 10px 14px;
+      display: inline-block;
+      border: 1px solid var(--accent);
+      background: var(--accent-soft);
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      font-size: 11pt;
+    }
+
+    .team-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+    }
+
+    .team-table th,
+    .team-table td {
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      font-size: 11pt;
+    }
+
+    .team-table th {
+      background: #f2f6fa;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      color: var(--accent);
+      margin-top: 0;
+    }
+
+    h1 {
+      font-size: 22pt;
+      margin-bottom: 14px;
+      letter-spacing: 0.2px;
+    }
+
+    h2 {
+      font-size: 16pt;
+      margin: 18px 0 8px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 4px;
+    }
+
+    h3 {
+      font-size: 13pt;
+      margin: 14px 0 6px;
+    }
+
+    p {
+      margin: 8px 0;
+      text-align: justify;
+    }
+
+    ul,
+    ol {
+      margin: 8px 0 8px 20px;
+    }
+
+    li {
+      margin: 4px 0;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 10.5pt;
+    }
+
+    .toc-list {
+      padding-left: 0;
+      list-style: none;
+      margin: 0;
+      font-size: 11.5pt;
+    }
+
+    .toc-list li {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px dotted #b9c7d2;
+      padding: 5px 0;
+      gap: 10px;
+    }
+
+    .chapter {
+      page-break-before: always;
+    }
+
+    .chapter-header {
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      border-left: 4px solid var(--accent);
+      background: #f7fafc;
+    }
+
+    .chapter-number {
+      text-transform: uppercase;
+      font-size: 10pt;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .quote-box {
+      margin: 14px 0;
+      padding: 10px 14px;
+      border-left: 3px solid #7d96aa;
+      background: #f8fbfd;
+      font-style: italic;
+    }
+
+    .code {
+      font-family: "Courier New", monospace;
+      background: #f4f6f8;
+      border: 1px solid #dbe3e9;
+      padding: 10px;
+      white-space: pre-wrap;
+      font-size: 10.5pt;
+      line-height: 1.35;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      background: #fff;
+    }
+
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+      font-size: 11pt;
+    }
+
+    table.data th,
+    table.data td {
+      border: 1px solid var(--line);
+      padding: 7px 8px;
+      vertical-align: top;
+    }
+
+    table.data th {
+      background: #edf3f8;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .footer {
+      position: absolute;
+      left: 32px;
+      right: 32px;
+      bottom: 18px;
+      border-top: 1px solid var(--line);
+      padding-top: 6px;
+      font-size: 10pt;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .small {
+      font-size: 10.5pt;
+      color: var(--muted);
+    }
+
+    .center {
+      text-align: center;
+    }
+
+    .signature {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .sig-box {
+      border-top: 1px solid #7d8d99;
+      padding-top: 8px;
+      text-align: center;
+      font-size: 10.5pt;
+      color: #33424d;
+    }
+
+    @media screen and (max-width: 1000px) {
+      .book {
+        padding: 10px;
+      }
+      .page {
+        padding: 16px;
+        min-height: auto;
+      }
+      .cover {
+        min-height: auto;
+      }
+      .grid-2,
+      .signature {
+        grid-template-columns: 1fr;
+      }
+      .footer {
+        position: static;
+        margin-top: 16px;
+      }
+    }
+
+    @media print {
+      html,
+      body {
+        background: #fff;
+      }
+      .book {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+      }
+      .page {
+        border: none;
+        margin: 0;
+        padding: 0;
+        min-height: auto;
+      }
+      .cover {
+        border: none;
+      }
+    }
+  </style>
+
+  <style>
+    :root {
+      --paper-width: 210mm;
+      --paper-height: 297mm;
+      --paper-bg: #f5f1eb;
+      --text-primary: #2d2622;
+      --text-secondary: #6a5e55;
+      --rule: #ddd1c3;
+      --brand: #7a2e2e;
+      --brand-soft: #f6ede5;
+      --content-font: "Cambria", "Palatino Linotype", "Book Antiqua", serif;
+      --heading-font: "Garamond", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    html,
+    body {
+      background: var(--paper-bg);
+      color: var(--text-primary);
+      font-family: var(--content-font);
+      font-size: 11.4pt;
+      line-height: 1.52;
+    }
+
+    .book {
+      max-width: calc(var(--paper-width) + 36mm);
+      margin: 0 auto;
+      padding: 18px 0 30px;
+    }
+
+    .page {
+      width: var(--paper-width);
+      min-height: var(--paper-height);
+      margin: 10px auto;
+      padding: 20mm 16mm 18mm 16mm;
+      border: 1px solid #ddd1c3;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(58, 39, 28, 0.1);
+      position: relative;
+      page-break-after: always;
+      break-after: page;
+    }
+
+    .cover {
+      border: 1.4px solid #7a2e2e;
+      background: linear-gradient(180deg, #faf5ef 0%, #ffffff 58%, #f6ede5 100%);
+      min-height: var(--paper-height);
+    }
+
+    .cover-top {
+      border-bottom: 1px solid var(--rule);
+      padding-bottom: 14mm;
+    }
+
+    .cover-title {
+      font-family: var(--heading-font);
+      font-size: 35pt;
+      letter-spacing: 0.6px;
+      color: var(--brand);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .cover-subtitle {
+      font-size: 14pt;
+      color: #6a5e55;
+      max-width: 150mm;
+    }
+
+    .hackathon-strip {
+      background: var(--brand-soft);
+      border: 1px solid #a36a4a;
+      color: #7a2e2e;
+      padding: 6px 12px;
+      font-size: 10.2pt;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      font-family: var(--heading-font);
+      color: var(--brand);
+    }
+
+    h1 {
+      font-size: 23pt;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: 0.2px;
+    }
+
+    h2 {
+      font-size: 14.5pt;
+      border-bottom: 1px solid var(--rule);
+      margin-top: 16px;
+      padding-bottom: 5px;
+    }
+
+    h3 {
+      font-size: 12.2pt;
+      margin-top: 12px;
+      margin-bottom: 4px;
+    }
+
+    p,
+    li,
+    td,
+    th {
+      font-size: 11pt;
+      color: var(--text-primary);
+    }
+
+    .meta,
+    .small {
+      color: var(--text-secondary);
+      font-size: 10.2pt;
+    }
+
+    .chapter-header {
+      border-left: 3px solid #7a2e2e;
+      background: #f6ede5;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+    }
+
+    .chapter-number {
+      color: #6a5e55;
+      font-weight: 600;
+      letter-spacing: 1px;
+      font-size: 9.5pt;
+    }
+
+    .toc-list li {
+      border-bottom: 1px dotted #ddd1c3;
+      padding: 5px 0;
+      font-size: 10.8pt;
+    }
+
+    table.data,
+    .team-table {
+      font-size: 10.8pt;
+    }
+
+    table.data th,
+    table.data td,
+    .team-table th,
+    .team-table td {
+      border: 1px solid #ddd1c3;
+      padding: 7px 8px;
+    }
+
+    table.data th,
+    .team-table th {
+      background: #f3e7dc;
+      color: #7a2e2e;
+      font-weight: 700;
+    }
+
+    .quote-box {
+      border-left: 2px solid #8a4b3f;
+      background: #faf2ea;
+      color: #3a302b;
+      font-size: 10.9pt;
+    }
+
+    .code {
+      border: 1px solid #e3d6c9;
+      background: #f9f3ec;
+      font-size: 10pt;
+      line-height: 1.38;
+      color: #3a302b;
+    }
+
+    .card {
+      border: 1px solid #ddd1c3;
+      background: #fdf9f5;
+    }
+
+    .sig-box {
+      border-top: 1px solid #b39a86;
+      color: #5b4f46;
+    }
+
+    .footer {
+      left: 16mm;
+      right: 16mm;
+      bottom: 8mm;
+      border-top: 1px solid #ddd1c3;
+      font-size: 9.8pt;
+      color: #6a5e55;
+      padding-top: 4px;
+      background: transparent;
+    }
+
+    .screenshot-block {
+      margin: 10px 0 14px;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .screenshot-title {
+      font-size: 12pt;
+      color: var(--brand);
+      margin: 8px 0 6px;
+      font-weight: 700;
+    }
+
+    .screenshot-image {
+      width: 100%;
+      max-height: 185mm;
+      object-fit: contain;
+      border: 1px solid #ddd1c3;
+      background: #fff;
+      padding: 4px;
+    }
+
+    .screenshot-caption {
+      margin-top: 5px;
+      font-size: 9.8pt;
+      color: var(--text-secondary);
+      text-align: center;
+    }
+
+    .arch-diagram {
+      margin: 12px 0 16px;
+      padding: 10px;
+      border: 1px solid #ddd1c3;
+      background: #fdf9f5;
+    }
+
+    .arch-step {
+      border: 1px solid #cfbba8;
+      background: #fff;
+      color: #3a302b;
+      font-size: 10.6pt;
+      padding: 8px 10px;
+      border-radius: 4px;
+      text-align: center;
+      font-weight: 600;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .arch-arrow {
+      text-align: center;
+      color: #8a4b3f;
+      font-size: 16pt;
+      line-height: 1.1;
+      margin: 2px 0;
+      font-weight: 700;
+    }
+
+    @media screen and (max-width: 1024px) {
+      .book {
+        max-width: 100%;
+        padding: 8px;
+      }
+
+      .page,
+      .cover {
+        width: 100%;
+        min-height: auto;
+        padding: 18px 16px 14px;
+      }
+
+      .grid-2,
+      .signature {
+        grid-template-columns: 1fr;
+      }
+
+      .footer {
+        position: static;
+        margin-top: 12px;
+      }
+    }
+
+    @media print {
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #fff;
+        print-color-adjust: exact;
+        -webkit-print-color-adjust: exact;
+      }
+
+      .book {
+        width: var(--paper-width);
+        max-width: var(--paper-width);
+        margin: 0;
+        padding: 0;
+      }
+
+      .page,
+      .cover {
+        width: var(--paper-width);
+        min-height: var(--paper-height);
+        margin: 0;
+        border: none;
+        box-shadow: none;
+        page-break-after: always;
+        break-after: page;
+      }
+
+      .page:last-child {
+        page-break-after: auto;
+        break-after: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="book">
+    <section class="page cover">
+      <div class="cover-top">
+        <p class="meta">Hackathon Project Documentation</p>
+        <h1 class="cover-title">OSForensics</h1>
+        <p class="cover-subtitle">An Electron-Packed Desktop Application Built with Web Technologies for Linux Forensic Analysis</p>
+        <div class="hackathon-strip">Hackathon Submission: CyberSheild 2026</div>
+      </div>
+
+      <div>
+        <h2>Team Members</h2>
+        <table class="team-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Registration Number</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Shudarsan Regmi</td>
+              <td>CH.SC.U4CYS23055</td>
+            </tr>
+            <tr>
+              <td>Hirthij Balaji C</td>
+              <td>CH.SC.U4ARE23056</td>
+            </tr>
+            <tr>
+              <td>K S Maangalya</td>
+              <td>CH.SC.U4CYS23013</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <p class="meta">This report documents architecture, implementation, evaluation, and future direction of the OSForensics project.</p>
+      </div>
+
+      <div class="footer">
+        <span>OSForensics Project Report</span>
+        <span>CyberSheild 2026</span>
+      </div>
+    </section>
+
+    <section class="page chapter">
+      <div class="chapter-header">
+        <div class="chapter-number">Front Matter</div>
+        <h1>Certificate and Declaration</h1>
+      </div>
+      <p>This is to certify that the project report titled <strong>OSForensics</strong> has been prepared and submitted as part of the hackathon initiative <strong>CyberSheild 2026</strong>. The work presented here is an original implementation effort by the team listed in this report, completed for educational and research-oriented cybersecurity innovation.</p>
+      <p>We declare that:</p>
+      <ul>
+        <li>The implementation was developed by the team during the project timeline and demonstrates our technical understanding of digital forensics principles.</li>
+        <li>All analysis flows in this project are intentionally read-only and non-destructive toward evidence sources.</li>
+        <li>The report content, system designs, and interpretation presented here are based on our own development and testing outcomes.</li>
+        <li>Any open-source tools, libraries, and frameworks used are acknowledged in the references section.</li>
+      </ul>
+      <div class="signature">
+        <div class="sig-box">Shudarsan Regmi<br/>CH.SC.U4CYS23055</div>
+        <div class="sig-box">Hirthij Balaji C<br/>CH.SC.U4ARE23056</div>
+        <div class="sig-box">K S Maangalya<br/>CH.SC.U4CYS23013</div>
+      </div>
+      <div class="footer">
+        <span>Declaration</span>
+        <span>Page 2</span>
+      </div>
+    </section>
+
+    <section class="page chapter">
+      <div class="chapter-header">
+        <div class="chapter-number">Front Matter</div>
+        <h1>Abstract</h1>
+      </div>
+      <p>OSForensics is a forensic prototype developed for the CyberSheild 2026 challenge on <strong>Analysis of Privacy-Focused and Adversary-Favored Operating Systems</strong>. The solution targets Linux environments commonly leveraged for offensive security and anonymity workflows, including distributions such as Kali Linux, BlackArch, and Tails OS.</p>
+      <p>The solution is delivered as a <strong>desktop application packaged with Electron</strong> and developed using web technologies. This approach provides a classical desktop-app experience for investigators while retaining a fast and maintainable modern UI development stack.</p>
+      <p>The platform performs operating-system-aware inspection on either a live Linux filesystem context or a disk image/filesystem snapshot. It identifies Linux distribution characteristics, detects potentially misused tool artefacts, classifies findings into risk-oriented categories, and generates structured reports with supporting indicators.</p>
+      <p>The backend is intentionally forensic-aware and non-destructive, with read-only evidence handling, integrity metadata, provenance, and audit context. Analysis modules focus on package and filesystem traces, configuration artefacts, metadata, persistence indicators, and related system evidence that remain meaningful even in privacy-centric or partially amnesic environments.</p>
+      <p>The final output is actionable for investigators: identified OS profile, detected tools and traces, risk classification, and investigation observations in JSON/HTML/PDF formats. This report documents how the implementation maps directly to the challenge functional expectations and design constraints.</p>
+      <div class="quote-box">"The project objective was not just analysis, but analysis that remains accountable, explainable, and courtroom-aware."</div>
+      <div class="footer">
+        <span>Abstract</span>
+        <span>Page 3</span>
+      </div>
+    </section>
+
+    <section class="page chapter">
+      <div class="chapter-header">
+        <div class="chapter-number">Front Matter</div>
+        <h1>Table of Contents</h1>
+      </div>
+      <ul class="toc-list">
+        <li><span>1. Introduction and Motivation</span><span>5</span></li>
+        <li><span>2. Problem Statement and Objectives</span><span>6</span></li>
+        <li><span>3. Scope, Assumptions, and Constraints</span><span>7</span></li>
+        <li><span>4. Literature and Technology Background</span><span>8</span></li>
+        <li><span>5. System Architecture Overview</span><span>9</span></li>
+        <li><span>6. Backend Design (FastAPI Core)</span><span>10</span></li>
+        <li><span>7. Filesystem and Evidence Access Layer</span><span>11</span></li>
+        <li><span>8. Forensic Analysis Modules</span><span>12</span></li>
+        <li><span>9. Remote SSH Live Acquisition Pipeline</span><span>13</span></li>
+        <li><span>10. AI Investigation Agent Design</span><span>14</span></li>
+        <li><span>11. Legal Awareness and Procedural Metadata</span><span>15</span></li>
+        <li><span>12. Reporting and Export Framework</span><span>16</span></li>
+        <li><span>13. Frontend and User Workflow</span><span>17</span></li>
+        <li><span>14. Security, Privacy, and Safety Controls</span><span>18</span></li>
+        <li><span>15. Testing Strategy and Validation</span><span>19</span></li>
+        <li><span>16. Results and Observations</span><span>20</span></li>
+        <li><span>17. Challenges and Engineering Trade-offs</span><span>21</span></li>
+        <li><span>18. Innovation Highlights for CyberSheild 2026</span><span>22</span></li>
+        <li><span>19. Future Work and Productization Roadmap</span><span>23</span></li>
+        <li><span>20. Conclusion</span><span>24</span></li>
+        <li><span>Appendix A - API Endpoints</span><span>25</span></li>
+        <li><span>Appendix B - Desktop Application Screenshots</span><span>26</span></li>
+        <li><span>Appendix C - Risk Register</span><span>27</span></li>
+        <li><span>Appendix D - References</span><span>28</span></li>
+      </ul>
+      <p class="small">Page numbers are aligned for print layout and may vary slightly depending on printer/PDF settings.</p>
+      <div class="footer">
+        <span>Table of Contents</span>
+        <span>Page 4</span>
+      </div>
+    </section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 1</div><h1>Introduction and Motivation</h1></div>
+      <p>Modern cybercrime investigations are no longer limited to conventional Windows and macOS artefacts. Threat actors and privacy-conscious users increasingly operate from Linux distributions engineered for anonymity, offensive testing, and minimal persistent traceability. This transition creates a practical gap for forensic teams that rely on Windows-centric triage models.</p>
+      <p>Distributions such as Kali Linux, BlackArch, and Tails OS provide ready access to reconnaissance, exploitation, anonymization, and covert transfer tooling. While these tools have legitimate educational and defensive uses, they can also be repurposed in malicious workflows. Investigators therefore require operating-system-aware inspection that can distinguish context, not only list files.</p>
+      <p>OSForensics was built to address this gap by combining Linux-aware evidence extraction, artefact detection, and structured risk categorization into one workflow. The project emphasizes interpretable forensic signals from package traces, configuration files, metadata, persistence clues, and service footprints while preserving evidence integrity.</p>
+      <p>This report positions the implementation as a direct response to the hackathon challenge and demonstrates how the prototype converts raw Linux artefacts into actionable investigation output.</p>
+      <div class="footer"><span>Chapter 1</span><span>Page 5</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 2</div><h1>Problem Statement and Objectives</h1></div>
+      <h2>Problem Statement</h2>
+      <p>The core challenge is to design a forensic tool capable of analyzing Linux environments favored for offensive operations and privacy protection, including live-boot and amnesic contexts. Conventional investigation workflows often fail to provide clear visibility into these systems, especially when persistence is limited or intentionally minimized.</p>
+      <h2>Primary Objectives</h2>
+      <ol>
+        <li>Identify the underlying Linux distribution and recognize adversary-favored or privacy-focused profiles.</li>
+        <li>Detect tool and artefact traces related to anonymization, reconnaissance, intrusion utilities, and covert transfer mechanisms.</li>
+        <li>Classify findings into behavioral/risk groups such as high-risk offensive tooling, and privacy infrastructure.</li>
+        <li>Operate on live Linux context or disk image/filesystem snapshot without destructive interactions.</li>
+        <li>Generate a structured forensic report with OS characteristics, indicators, risk level, and investigation observations.</li>
+        <li>Preserve evidentiary integrity through provenance, hashing, and audit-aware reporting practices.</li>
+      </ol>
+      <h2>Functional Mapping to Challenge</h2>
+      <table class="data">
+        <tr><th>Challenge Expectation</th><th>Prototype Response</th></tr>
+        <tr><td>Operating system identification</td><td>Linux distribution heuristics and Tails/live-environment indicators.</td></tr>
+        <tr><td>Tool and artefact detection</td><td>Config/package/filesystem traces for Tor, VPN/proxy, recon/intrusion, transfer utilities.</td></tr>
+        <tr><td>Behavior and risk classification</td><td>Categorized findings with offensive, dual-use, and privacy-oriented grouping.</td></tr>
+        <tr><td>Forensic reporting</td><td>Structured JSON/HTML/PDF output with evidence context and observations.</td></tr>
+      </table>
+      <h2>Success Criteria</h2>
+      <table class="data">
+        <tr><th>Criterion</th><th>Expected Outcome</th></tr>
+        <tr><td>OS Awareness</td><td>Meaningful identification of Linux distribution and privacy/live indicators.</td></tr>
+        <tr><td>Tool Visibility</td><td>Detection of relevant anonymization/offensive/covert-transfer artefacts.</td></tr>
+        <tr><td>Evidence Safety</td><td>No write operations on source evidence paths during analysis.</td></tr>
+        <tr><td>Traceability</td><td>Reports include indicators, provenance context, and audit-aware metadata.</td></tr>
+      </table>
+      <div class="footer"><span>Chapter 2</span><span>Page 6</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 3</div><h1>Scope, Assumptions, and Constraints</h1></div>
+      <h2>Scope</h2>
+      <p>The scope focuses on Linux-centric forensic triage for distributions and environments commonly associated with adversary operations or privacy-first usage. The prototype targets filesystem artefacts, package traces, metadata, configuration files, and selected process/system indicators that can be collected safely in constrained investigation windows.</p>
+      <h2>Assumptions</h2>
+      <ul>
+        <li>Investigators operate with lawful authority and proper authorization for evidence acquisition.</li>
+        <li>Target systems include Linux distributions such as Kali-like, BlackArch-like, and Tails-like profiles.</li>
+        <li>When remote mode is used, SSH access and bounded collection parameters are available.</li>
+      </ul>
+      <h2>Constraints</h2>
+      <ul>
+        <li>Detection is heuristic in multiple areas and should be interpreted with analyst validation.</li>
+        <li>The tool is intentionally non-destructive and avoids invasive or state-changing host actions.</li>
+        <li>This stage prioritizes investigative visibility and challenge alignment over full enterprise automation.</li>
+      </ul>
+      <p>These boundaries align with challenge guidance: non-destructive operation, evidentiary integrity, and focus on actionable traces from Linux-native artefacts.</p>
+      <div class="footer"><span>Chapter 3</span><span>Page 7</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 4</div><h1>Literature and Technology Background</h1></div>
+      <h2>Digital Forensics Foundations</h2>
+      <p>Digital forensics requires acquisition, preservation, examination, analysis, and reporting. A valid workflow preserves original evidence and provides reproducible methods for deriving findings. File metadata, logs, process traces, and user artifacts are key evidence classes in host investigations.</p>
+      <h2>Core Technologies Used</h2>
+      <table class="data">
+        <tr><th>Technology</th><th>Role in Project</th></tr>
+        <tr><td>Python 3.12+</td><td>Primary implementation language for backend and analysis modules.</td></tr>
+        <tr><td>FastAPI</td><td>API framework for ingestion, analysis, and reporting endpoints.</td></tr>
+        <tr><td>pytsk3 / Sleuth Kit</td><td>Filesystem evidence access where image-level parsing is available.</td></tr>
+        <tr><td>React + Vite</td><td>Frontend workflow for analysts and report export operations.</td></tr>
+        <tr><td>Ollama</td><td>Local LLM serving for AI investigation agent reasoning.</td></tr>
+      </table>
+      <h2>Design Rationale</h2>
+      <p>The team selected technologies that are open, scriptable, and portable. The architecture favors explicit API contracts and modular analyzers so that new capabilities can be inserted without rewriting the full pipeline.</p>
+      <div class="footer"><span>Chapter 4</span><span>Page 8</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 5</div><h1>System Architecture Overview</h1></div>
+      <p>OSForensics follows a layered architecture with clear separation of concerns: acquisition, extraction, analysis, orchestration, and presentation. This structure helps maintain extensibility and makes the codebase suitable for incremental growth after the hackathon.</p>
+      <div class="arch-diagram" role="img" aria-label="System architecture flow from evidence source to UI visualization">
+        <div class="arch-step">Evidence Source (image/path/SSH)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-step">Access Layer (local mount or pytsk3 abstraction)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-step">Analysis Orchestrator</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-step">Module Stack (timeline, deleted, persistence, config, services, browsers, multimedia, Tails, memory)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-step">Legal Context Attachment (hashes, provenance, custody, audit)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-step">Report Builder (JSON/HTML/PDF)</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-step">API Response + UI Visualization</div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Backend Core</h3>
+          <p>FastAPI endpoints trigger standardized analysis flows. Modules are selected based on request toggles and environment capabilities.</p>
+        </div>
+        <div class="card">
+          <h3>Frontend Layer</h3>
+          <p>React interface supports source submission, analysis execution, result browsing, and report export actions.</p>
+        </div>
+      </div>
+      <p>The architecture emphasizes deterministic processing, allowing AI assistance to sit above reliable forensic tool calls rather than replacing them.</p>
+      <div class="footer"><span>Chapter 5</span><span>Page 9</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 6</div><h1>Backend Design (FastAPI Core)</h1></div>
+      <p>The backend is implemented as a service-oriented FastAPI application. It exposes endpoints for direct analysis, case-specific analysis, remote acquisition, and report export. Request models enforce explicit parameters to reduce ambiguous execution paths.</p>
+      <h2>Representative Endpoints</h2>
+      <ul>
+        <li><code>POST /analyze</code>: Analyze local image path or mounted filesystem source.</li>
+        <li><code>POST /analyze/ssh</code>: Perform bounded remote collection and analyze the snapshot.</li>
+        <li><code>POST /cases/{case_id}/analyze/ssh</code>: Run remote acquisition under case context.</li>
+        <li><code>POST /report/export/html</code>: Generate structured dossier in HTML.</li>
+        <li><code>POST /report/export/pdf</code>: Generate PDF report for legal and operational sharing.</li>
+      </ul>
+      <h2>Execution Model</h2>
+      <p>Each run resolves source access, executes selected modules, aggregates findings, and appends legal metadata. The API is intentionally stateless per request while case data provides persistent history and evidentiary tracking.</p>
+      <div class="footer"><span>Chapter 6</span><span>Page 10</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 7</div><h1>Filesystem and Evidence Access Layer</h1></div>
+      <p>Forensic analysis quality depends on how evidence is accessed. OSForensics introduces an abstraction that supports both filesystem mounts and image-based parsing with pytsk3 where available. This avoids module-specific coupling to source format.</p>
+      <h2>Design Goals</h2>
+      <ul>
+        <li>Read-only behavior by default.</li>
+        <li>Uniform path traversal API for analyzers.</li>
+        <li>Compatibility with local testing and image-driven workflows.</li>
+      </ul>
+      <h2>Operational Benefits</h2>
+      <p>The abstraction allows investigators to test heuristics quickly in development and apply the same logic to real evidence images in controlled environments. This is particularly useful in hackathon delivery, where both speed and correctness are critical.</p>
+      <div class="quote-box">Abstraction at the evidence layer reduced implementation duplication and made module design significantly cleaner.</div>
+      <div class="footer"><span>Chapter 7</span><span>Page 11</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 8</div><h1>Forensic Analysis Modules</h1></div>
+      <p>The module stack is designed to satisfy challenge expectations around OS-aware inspection, tool artefact detection, and risk classification across adversary-favored Linux environments.</p>
+      <table class="data">
+        <tr><th>Module</th><th>Challenge Function</th><th>Representative Indicators</th></tr>
+        <tr><td>OS and Environment Detection</td><td>Identify Linux distribution and live/amnesic traits.</td><td>Release files, live boot artefacts, Tails persistence markers.</td></tr>
+        <tr><td>Anonymization and Privacy Detection</td><td>Detect privacy infrastructure traces.</td><td>Tor configuration, proxy/VPN traces, privacy-focused service configs.</td></tr>
+        <tr><td>Recon and Intrusion Tool Detection</td><td>Highlight offensive-security utility presence.</td><td>Package signatures, binaries, framework traces, config remnants.</td></tr>
+        <tr><td>Covert Transfer / Exfiltration Indicators</td><td>Surface tunneling and secure transfer artefacts.</td><td>SSH tunnel configs, transfer utility traces, suspicious sync patterns.</td></tr>
+        <tr><td>Persistence and Service Analysis</td><td>Find startup persistence and service abuse clues.</td><td>Systemd/init entries, autorun scripts, unusual daemon state.</td></tr>
+        <tr><td>Timeline and Deleted Artefacts</td><td>Reconstruct activity context and removed evidence clues.</td><td>Temporal event ordering, deleted file references and metadata.</td></tr>
+        <tr><td>Risk Classification Layer</td><td>Categorize findings by investigative risk profile.</td><td>High-risk offensive, dual-use cybersecurity, privacy/anonymization buckets.</td></tr>
+      </table>
+      <p>Modules are toggleable per case, allowing investigators to adapt depth and runtime while maintaining forensic-safe, read-only analysis behavior.</p>
+      <div class="footer"><span>Chapter 8</span><span>Page 12</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 9</div><h1>Remote SSH Live Acquisition Pipeline</h1></div>
+      <p>OSForensics supports acquiring evidence snapshots from remote Linux systems over SSH. The pipeline is designed for bounded collection to prevent uncontrolled data transfer and to preserve analyst-defined limits.</p>
+      <h2>Key Parameters</h2>
+      <ul>
+        <li><code>include_paths</code>: controls evidence coverage.</li>
+        <li><code>max_total_mb</code>, <code>max_file_mb</code>, <code>max_files</code>: hard resource limits.</li>
+        <li>Module toggles: allows selective forensic processing after acquisition.</li>
+      </ul>
+      <h2>Workflow</h2>
+      <ol>
+        <li>Authenticate to remote host using SSH key credentials.</li>
+        <li>Collect bounded snapshot into local workspace staging area.</li>
+        <li>Run standard analysis pipeline on staged snapshot.</li>
+        <li>Attach provenance and audit details to the output report.</li>
+      </ol>
+      <p>This feature is highly valuable in incident response where physical image acquisition may be delayed but immediate triage is required.</p>
+      <div class="footer"><span>Chapter 9</span><span>Page 13</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 10</div><h1>AI Investigation Agent Design</h1></div>
+      <p>The AI investigation layer uses a ReAct-style design in which the model reasons over case context and invokes deterministic forensic tools. This architecture avoids uncontrolled hallucination by grounding high-level language interaction in concrete module outputs.</p>
+      <h2>Agent Characteristics</h2>
+      <ul>
+        <li>Tool-augmented reasoning with explicit action/observation loop.</li>
+        <li>Local model integration using Ollama for privacy-conscious operation.</li>
+        <li>Domain-specific tool registration for focused forensic tasks.</li>
+      </ul>
+      <h2>Advanced Agent Toolkit Highlights</h2>
+      <ul>
+        <li>Multimedia metadata and steganography indicator extraction.</li>
+        <li>Tails OS specialized persistence and amnesia checks.</li>
+        <li>Configuration hardening and network integrity audits.</li>
+        <li>Advanced file carving support for evidence recovery attempts.</li>
+      </ul>
+      <p>The result is a collaborative workflow where AI assists speed and discoverability, while investigators retain judgment and evidentiary accountability.</p>
+      <div class="footer"><span>Chapter 10</span><span>Page 14</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 11</div><h1>Legal Awareness and Procedural Metadata</h1></div>
+      <p>The project integrates legal and procedural metadata directly in analysis output to support forensic defensibility. This is a major differentiator from purely technical analyzers.</p>
+      <h2>Implemented Legal Features</h2>
+      <ul>
+        <li><strong>Evidence Integrity:</strong> SHA256 and SHA1 hashes for file-based evidence, with acquisition timestamp.</li>
+        <li><strong>Chain of Custody:</strong> Case records maintain source-level evidence identifiers and transition events.</li>
+        <li><strong>Evidence Provenance:</strong> Source and extraction method are retained in analysis context.</li>
+        <li><strong>Audit Logging:</strong> Case/source actions and analysis activities are logged for traceability.</li>
+        <li><strong>Legal Disclaimer Block:</strong> Reports include cautionary guidance and corroboration reminders.</li>
+      </ul>
+      <p>Embedding this metadata in every run encourages investigators to treat reporting as a legal artifact, not only a technical output.</p>
+      <div class="footer"><span>Chapter 11</span><span>Page 15</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 12</div><h1>Reporting and Export Framework</h1></div>
+      <p>A project is only useful if its findings can be communicated effectively. OSForensics provides structured exports in JSON, HTML, and PDF with report variants tailored to different audiences.</p>
+      <h2>Available Variants</h2>
+      <ul>
+        <li><strong>Comprehensive:</strong> full technical depth plus legal metadata.</li>
+        <li><strong>Legal:</strong> custody and audit centric formatting.</li>
+        <li><strong>Executive:</strong> concise risk and impact summary.</li>
+      </ul>
+      <h2>Case-Level Reporting</h2>
+      <p>When case data is supplied, the exporter can aggregate findings from multiple sources, generating a single dossier with source rollups and merged interpretations.</p>
+      <h2>Output Design Principles</h2>
+      <ul>
+        <li>Structured sections to avoid evidence omission.</li>
+        <li>Consistent terminology for analyst handoff.</li>
+        <li>Printable layouts suitable for documentation workflows.</li>
+      </ul>
+      <div class="footer"><span>Chapter 12</span><span>Page 16</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 13</div><h1>Frontend and User Workflow</h1></div>
+      <p>The analyst interface is implemented with web technologies (React + Vite) and packaged as an Electron desktop application. This provides a classical desktop app flow while preserving the speed and flexibility of modern web UI engineering.</p>
+      <h2>Typical Analyst Journey</h2>
+      <ol>
+        <li>Input evidence source or remote SSH host configuration.</li>
+        <li>Select analysis toggles and execute the run.</li>
+        <li>Review findings by section (timeline, deleted, config, browser, etc.).</li>
+        <li>Open report view and export JSON, HTML, PDF, or executive PDF.</li>
+      </ol>
+      <h2>Usability Considerations</h2>
+      <ul>
+        <li>Classical desktop app behavior suitable for labs, demonstrations, and investigation workflows.</li>
+        <li>Structured report view for technical analysts and non-technical stakeholders.</li>
+        <li>Direct integration with case workflow for traceable investigations and evidence continuity.</li>
+      </ul>
+      <div class="footer"><span>Chapter 13</span><span>Page 17</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 14</div><h1>Security, Privacy, and Safety Controls</h1></div>
+      <p>OSForensics was designed with a safety-first mindset to avoid accidental contamination of evidence and to support responsible handling of sensitive data.</p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Security Controls</h3>
+          <ul>
+            <li>Bounded SSH collection parameters.</li>
+            <li>Request-driven module gating to reduce attack surface.</li>
+            <li>Controlled report generation with explicit metadata inputs.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Privacy and Safety</h3>
+          <ul>
+            <li>Local model operation through Ollama (no mandatory cloud dependency).</li>
+            <li>Read-only evidence handling principle.</li>
+            <li>Trace logs for accountability and review.</li>
+          </ul>
+        </div>
+      </div>
+      <p>Future hardening should include role-based access control, secrets management improvements, and stronger sandboxing for optional analyzers.</p>
+      <div class="footer"><span>Chapter 14</span><span>Page 18</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 15</div><h1>Testing Strategy and Validation</h1></div>
+      <p>Given hackathon constraints, testing prioritized functional confidence and integration validity. Validation focused on endpoint behavior, analyzer compatibility, and export correctness.</p>
+      <h2>Validation Methods</h2>
+      <ul>
+        <li>Manual API invocation against local and staged sample sources.</li>
+        <li>Selective script-based checks (for example, tool verification scripts).</li>
+        <li>Report output inspection across JSON, HTML, and PDF variants.</li>
+        <li>Remote acquisition test runs with bounded data limits.</li>
+      </ul>
+      <h2>Quality Observations</h2>
+      <p>The prototype demonstrates stable end-to-end operation. The main testing gap is broad automated coverage and synthetic evidence datasets for regression benchmarking.</p>
+      <div class="footer"><span>Chapter 15</span><span>Page 19</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 16</div><h1>Results and Observations</h1></div>
+      <p>The prototype met the core hackathon objective by delivering operating-system-aware Linux forensic inspection with structured, investigator-oriented outputs. End-to-end runs demonstrated that the system can ingest evidence, identify environment cues, detect high-value artefacts, classify risk context, and produce formal reports.</p>
+      <table class="data">
+        <tr><th>Challenge Dimension</th><th>Observed Outcome</th></tr>
+        <tr><td>OS Identification</td><td>Linux environment characteristics and Tails-related indicators were surfaced in analysis outputs.</td></tr>
+        <tr><td>Tool & Artefact Detection</td><td>Anonymization, offensive-tooling, and persistence-related traces were captured from filesystem/config evidence.</td></tr>
+        <tr><td>Behavior/Risk Classification</td><td>Findings were grouped into offensive, dual-use, and privacy-oriented investigative categories.</td></tr>
+        <tr><td>Forensic Reporting</td><td>Structured JSON/HTML/PDF reports contained indicators, observations, and evidence context.</td></tr>
+        <tr><td>Evidentiary Integrity</td><td>Read-only analysis principles and legal metadata attachment were maintained.</td></tr>
+      </table>
+      <p>Overall, the implementation provided meaningful visibility into Linux systems that are often difficult to triage with conventional, Windows-biased workflows.</p>
+      <div class="footer"><span>Chapter 16</span><span>Page 20</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 17</div><h1>Challenges and Engineering Trade-offs</h1></div>
+      <h2>Challenges Faced</h2>
+      <ul>
+        <li>Balancing rapid development with forensic rigor and non-destructive guarantees.</li>
+        <li>Maintaining consistency across multiple analysis modules and data shapes.</li>
+        <li>Designing AI assistance that remains grounded in deterministic evidence tooling.</li>
+        <li>Handling environment dependencies such as pytsk3, Volatility, and SSH tooling.</li>
+      </ul>
+      <h2>Trade-offs Made</h2>
+      <ul>
+        <li>Heuristic-first module design over deep parser completeness in initial release.</li>
+        <li>Modular breadth over specialized narrow-depth implementation.</li>
+        <li>Manual/targeted validation over full CI-grade test matrix during hackathon period.</li>
+      </ul>
+      <p>These trade-offs were intentional and prioritized demonstrable end-to-end capability while preserving an upgrade path for precision and scale improvements.</p>
+      <div class="footer"><span>Chapter 17</span><span>Page 21</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 18</div><h1>Innovation Highlights for CyberSheild 2026</h1></div>
+      <p>Within the competition context, the project showcased several innovation points that differentiate it from a basic scanner:</p>
+      <ol>
+        <li>Challenge-specific focus on privacy-focused and adversary-favored Linux environments rather than generic host scanning.</li>
+        <li>Unified support for live context and disk image/filesystem snapshot analysis.</li>
+        <li>Artefact-driven categorization of anonymization, offensive, dual-use, and covert-transfer tooling.</li>
+        <li>Integrated legal-awareness metadata that preserves evidentiary context in every report.</li>
+        <li>AI-assisted investigation workflow that remains grounded in deterministic forensic module outputs.</li>
+      </ol>
+      <div class="quote-box">The strongest innovation was translating a Linux-specific forensic challenge into a working, evidence-aware, investigation-ready prototype.</div>
+      <p>These features indicate strong potential for transition from academic prototype to operational research platform.</p>
+      <div class="footer"><span>Chapter 18</span><span>Page 22</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 19</div><h1>Future Work and Productization Roadmap</h1></div>
+      <h2>Short-Term Enhancements</h2>
+      <ul>
+        <li>Expand automated testing with fixture-based evidence corpora.</li>
+        <li>Improve parser depth for browser, log, and package database artifacts.</li>
+        <li>Add configurable severity scoring and cross-artifact correlation rules.</li>
+      </ul>
+      <h2>Medium-Term Goals</h2>
+      <ul>
+        <li>Role-based access control and multi-user case collaboration.</li>
+        <li>Stronger evidence management lifecycle and immutable storage integration.</li>
+        <li>Workflow templates for incident categories (malware, insider threat, data theft).</li>
+      </ul>
+      <h2>Long-Term Vision</h2>
+      <ul>
+        <li>Enterprise deployment model with distributed processing.</li>
+        <li>Extended memory forensics integrations and cloud workload evidence support.</li>
+        <li>Model governance and explainability dashboards for AI-assisted decisions.</li>
+      </ul>
+      <div class="footer"><span>Chapter 19</span><span>Page 23</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Chapter 20</div><h1>Conclusion</h1></div>
+      <p>OSForensics addresses the challenge of investigating Linux environments that are privacy-focused, offensive-tool-rich, or intentionally low-trace. The prototype demonstrates that OS-aware forensic inspection can be performed in a structured, non-destructive, and investigation-oriented manner.</p>
+      <p>The implemented pipeline supports live or snapshot-style evidence analysis, identifies distribution and environment characteristics, detects high-value tool artefacts, and organizes findings by risk context. This directly supports investigators in moving from raw system traces to actionable case observations.</p>
+      <p>By combining evidentiary integrity safeguards, modular analysis, and professional reporting, the project aligns strongly with CyberSheild 2026 goals and provides a practical base for future production-grade Linux forensics research.</p>
+      <div class="footer"><span>Chapter 20</span><span>Page 24</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Appendix A</div><h1>API Endpoints Snapshot</h1></div>
+      <table class="data">
+        <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+        <tr><td>/analyze</td><td>POST</td><td>Analyze local filesystem path or image source.</td></tr>
+        <tr><td>/analyze/ssh</td><td>POST</td><td>Remote host bounded acquisition and analysis.</td></tr>
+        <tr><td>/cases/{case_id}/analyze/ssh</td><td>POST</td><td>Case-bound remote analysis flow.</td></tr>
+        <tr><td>/report/export/html</td><td>POST</td><td>Generate structured HTML report output.</td></tr>
+        <tr><td>/report/export/pdf</td><td>POST</td><td>Generate printable PDF report output.</td></tr>
+      </table>
+      <p class="small">This appendix is intended as a quick index; consult source documentation for full request/response schemas.</p>
+      <div class="footer"><span>Appendix A</span><span>Page 25</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Appendix B</div><h1>Desktop Application Screenshots</h1></div>
+      <p class="small">All screenshots below are from <code>report/report_images</code>.</p>
+
+      <div class="screenshot-block">
+        <div class="screenshot-title">Classical Desktop App based UI</div>
+        <img class="screenshot-image" src="report_images/Desktopapp.png" alt="Classical desktop application UI" />
+        <div class="screenshot-caption">Figure B.1 - Classical Desktop App based UI</div>
+      </div>
+
+      <div class="screenshot-block">
+        <div class="screenshot-title">Case Management</div>
+        <img class="screenshot-image" src="report_images/casemgmt.png" alt="Case management interface" />
+        <div class="screenshot-caption">Figure B.2 - Case Management</div>
+      </div>
+
+      <div class="screenshot-block">
+        <div class="screenshot-title">Data Sources</div>
+        <img class="screenshot-image" src="report_images/sources.png" alt="Data sources screen" />
+        <div class="screenshot-caption">Figure B.3 - Data Sources</div>
+      </div>
+
+      <div class="screenshot-block">
+        <div class="screenshot-title">Bash History Analysis</div>
+        <img class="screenshot-image" src="report_images/timeline.png" alt="Bash history analysis and command activity timeline" />
+        <div class="screenshot-caption">Figure B.4 - Bash History Analysis</div>
+      </div>
+
+      <div class="screenshot-block">
+        <div class="screenshot-title">Recent Activities Highlights</div>
+        <img class="screenshot-image" src="report_images/recent.png" alt="Recent activity highlights" />
+        <div class="screenshot-caption">Figure B.5 - Recent Activities Highlights</div>
+      </div>
+
+      <div class="screenshot-block">
+        <div class="screenshot-title">Export Feature</div>
+        <img class="screenshot-image" src="report_images/export.png" alt="Export feature screen" />
+        <div class="screenshot-caption">Figure B.6 - Export Feature</div>
+      </div>
+
+      <div class="screenshot-block">
+        <div class="screenshot-title">AI Agent</div>
+        <img class="screenshot-image" src="report_images/ai_investigator.png" alt="AI investigator interface" />
+        <div class="screenshot-caption">Figure B.7 - AI Agent</div>
+      </div>
+
+      <div class="footer"><span>Appendix B</span><span>Page 26</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Appendix C</div><h1>Risk Register (Prototype Stage)</h1></div>
+      <table class="data">
+        <tr><th>Risk</th><th>Impact</th><th>Mitigation Direction</th></tr>
+        <tr><td>Heuristic false positives</td><td>Medium</td><td>Add confidence scoring and cross-check evidence correlation.</td></tr>
+        <tr><td>Dependency variability across environments</td><td>High</td><td>Containerized reference environment and setup validation scripts.</td></tr>
+        <tr><td>Limited automated tests</td><td>High</td><td>Adopt staged CI and fixture-backed regression testing.</td></tr>
+        <tr><td>Credential handling for SSH</td><td>Medium</td><td>Integrate secrets vault and stronger credential lifecycle controls.</td></tr>
+      </table>
+      <p>Tracking these risks openly ensures that future versions improve reliability, security posture, and deployability.</p>
+      <div class="footer"><span>Appendix C</span><span>Page 27</span></div></section>
+
+    <section class="page chapter"><div class="chapter-header"><div class="chapter-number">Appendix D</div><h1>References</h1></div>
+      <ol>
+        <li>Carrier, Brian. <em>File System Forensic Analysis</em>. Addison-Wesley.</li>
+        <li>NIST SP 800-86. <em>Guide to Integrating Forensic Techniques into Incident Response</em>.</li>
+        <li>Sleuth Kit Documentation and pytsk3 Python bindings.</li>
+        <li>FastAPI Official Documentation.</li>
+        <li>Volatility Foundation Documentation.</li>
+        <li>OWASP Logging and Monitoring Guidance.</li>
+        <li>Project documentation: README.md, Implementation.md, and module source files under <code>src/osforensics</code>.</li>
+      </ol>
+      <p class="center small">End of Report</p>
+      <div class="footer"><span>Appendix D</span><span>Page 28</span></div></section>
+  </main>
+</body>
+</html>

@@ -40,7 +40,7 @@ import tempfile
 import traceback
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.responses import StreamingResponse
@@ -124,6 +124,18 @@ class ReportExportRequest(BaseModel):
 app = FastAPI(title="OS Forensics API")
 
 
+ALLOWED_CORS_ORIGINS = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    # Electron production: file:// sends Origin: null
+    "null",
+}
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     """Return an empty favicon response to avoid browser 404 noise."""
@@ -138,22 +150,27 @@ def health():
 # Allow the UI dev server and Electron renderer (file:// → Origin: null) to call the API.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        # Electron production: file:// sends Origin: null
-        "null",
-    ],
+    allow_origins=sorted(ALLOWED_CORS_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
     max_age=3600,
 )
+
+
+@app.middleware("http")
+async def ensure_cors_headers(request: Request, call_next):
+    """Fallback CORS header injection for streamed/file responses and edge paths."""
+    response = await call_next(request)
+    req_origin = (request.headers.get("origin") or "").strip()
+    if req_origin in ALLOWED_CORS_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = req_origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        vary = response.headers.get("Vary", "")
+        if "Origin" not in {v.strip() for v in vary.split(",") if v.strip()}:
+            response.headers["Vary"] = f"{vary}, Origin".strip(", ")
+    return response
 
 
 def _utc_now() -> str:
@@ -693,6 +710,7 @@ def export_report_pdf(req: ReportExportRequest):
 
 @app.get("/multimedia/view")
 def multimedia_view(
+    request: Request,
     image_path: str = Query(..., description="Path to disk image or mounted directory"),
     file_path:  str = Query(..., description="Path to the media file within the filesystem"),
 ):
@@ -717,6 +735,20 @@ def multimedia_view(
 
     mime = EXT_TO_MIME.get(ext, "application/octet-stream")
 
+    # Explicitly include CORS response headers for media endpoints. This keeps
+    # browser image/video tag loads working even when upstream middleware misses
+    # header injection on file-stream responses.
+    req_origin = (request.headers.get("origin") or "").strip()
+    media_headers = {"Accept-Ranges": "bytes"}
+    if req_origin in ALLOWED_CORS_ORIGINS:
+        media_headers.update(
+            {
+                "Access-Control-Allow-Origin": req_origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Vary": "Origin",
+            }
+        )
+
     if fs.mode == "local":
         # For live/mounted mode serve directly — FileResponse handles range
         # requests so video seeking works properly.
@@ -727,13 +759,13 @@ def multimedia_view(
             raise HTTPException(status_code=403, detail="Path traversal detected.")
         if not os.path.isfile(local_p):
             raise HTTPException(status_code=404, detail="File not found.")
-        return FileResponse(local_p, media_type=mime, headers={"Accept-Ranges": "bytes"})
+        return FileResponse(local_p, media_type=mime, headers=media_headers)
     else:
         # TSK / disk-image mode: extract bytes via pytsk3
         raw = fs.read_file(safe_path, max_bytes=200 * 1024 * 1024)
         if raw is None:
             raise HTTPException(status_code=404, detail="File not found in image.")
-        return Response(content=raw, media_type=mime)
+        return Response(content=raw, media_type=mime, headers=media_headers)
 
 
 @app.get("/live/info")
