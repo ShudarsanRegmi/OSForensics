@@ -37,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import traceback
 from typing import Optional
 
@@ -70,7 +71,18 @@ from .services import detect_services
 from .tails import analyze_tails
 from .timeline import build_timeline
 from .ai_timeline import analyze_timeline_ai
-from .live_memory import get_live_ram_info, get_top_memory_processes, generate_memory_ai_insight, generate_dump_ai_insight
+from .live_memory import (
+    get_live_ram_info, 
+    get_top_memory_processes, 
+    generate_memory_ai_insight, 
+    generate_dump_ai_insight,
+    analyze_network_connections,
+    detect_suspicious_processes,
+    detect_rootkit_indicators,
+    analyze_memory_anomalies,
+    detect_anti_forensics,
+    get_system_integrity_metrics
+)
 from .memory import analyze_memory
 from .antiforensics import detect_antiforensics
 
@@ -1260,6 +1272,81 @@ def memory_dump_ai_analysis(req: MemoryDumpAIRequest):
     try:
         insight = generate_dump_ai_insight(req.report_data)
         return {"insight": insight}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+# ─── Advanced Forensic Analysis Endpoints ─────────────────────────────────────
+
+@app.get("/memory/network-analysis")
+def get_network_analysis():
+    """Analyze active network connections for suspicious patterns."""
+    try:
+        return analyze_network_connections()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/suspicious-processes")
+def get_suspicious_processes():
+    """Detect potentially malicious process patterns."""
+    try:
+        return detect_suspicious_processes()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/rootkit-scan")
+def scan_rootkit_indicators():
+    """Scan for common rootkit indicators and hidden processes."""
+    try:
+        return detect_rootkit_indicators()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/anomalies")
+def get_memory_anomalies():
+    """Analyze process memory maps for injection and other anomalies."""
+    try:
+        return analyze_memory_anomalies()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/anti-forensics")
+def detect_anti_forensics_attempts():
+    """Detect anti-forensics tools and evidence destruction attempts."""
+    try:
+        return detect_anti_forensics()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/integrity-metrics")
+def get_memory_integrity_metrics():
+    """Get comprehensive system integrity scoring and metrics."""
+    try:
+        return get_system_integrity_metrics()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/forensic-summary")
+def get_forensic_summary():
+    """Get a complete forensic summary combining all memory analyses."""
+    try:
+        return {
+            "ram_info": get_live_ram_info(),
+            "top_processes": get_top_memory_processes(10),
+            "network": analyze_network_connections(),
+            "suspicious_processes": detect_suspicious_processes(),
+            "rootkit_indicators": detect_rootkit_indicators(),
+            "memory_anomalies": analyze_memory_anomalies(),
+            "anti_forensics": detect_anti_forensics(),
+            "system_integrity": get_system_integrity_metrics(),
+            "timestamp": time.time()
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e)})
 

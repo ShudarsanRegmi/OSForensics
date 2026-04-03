@@ -1,7 +1,11 @@
 """Real-time system memory and process analysis for the forensic platform."""
 import os
 import time
-from typing import Dict, List, Any
+import re
+import math
+import struct
+from typing import Dict, List, Any, Tuple
+import subprocess
 
 def get_live_ram_info() -> Dict[str, Any]:
     """Parse /proc/meminfo for detailed RAM statistics."""
@@ -24,6 +28,7 @@ def get_live_ram_info() -> Dict[str, Any]:
     cached = meminfo.get("Cached", 0)
     swap_total = meminfo.get("SwapTotal", 0)
     swap_free = meminfo.get("SwapFree", 0)
+    dirty = meminfo.get("Dirty", 0)
 
     used = total - available if available else total - free
     used_pct = round((used / total) * 100, 2) if total else 0
@@ -35,6 +40,7 @@ def get_live_ram_info() -> Dict[str, Any]:
         "used_kb": used,
         "buffers_kb": buffers,
         "cached_kb": cached,
+        "dirty_kb": dirty,
         "used_pct": used_pct,
         "swap_total_kb": swap_total,
         "swap_free_kb": swap_free,
@@ -205,3 +211,470 @@ Use the following Markdown structure strictly:
         return agent.chat(prompt, use_json=False)
     except Exception as e:
         return f"Dump AI Analysis failed: {str(e)}"
+
+
+# ─── ADVANCED FORENSIC ANALYSIS FUNCTIONS ─────────────────────────────────────
+
+def analyze_network_connections() -> Dict[str, Any]:
+    """Analyze active network connections for suspicious patterns."""
+    try:
+        import socket
+        connections = []
+        suspicious = []
+        
+        # Parse /proc/net/tcp and /proc/net/tcp6
+        for tcp_file in ["/proc/net/tcp", "/proc/net/tcp6"]:
+            try:
+                with open(tcp_file, "r") as f:
+                    lines = f.readlines()[1:]  # Skip header
+                    for line in lines[:100]:  # Limit to first 100
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            local_addr = parts[1]
+                            remote_addr = parts[2]
+                            state = parts[3]
+                            
+                            # Convert hex to readable format
+                            try:
+                                loc_ip, loc_port = hex_to_ip_port(local_addr)
+                                rem_ip, rem_port = hex_to_ip_port(remote_addr)
+                                
+                                conn = {
+                                    "local": f"{loc_ip}:{loc_port}",
+                                    "remote": f"{rem_ip}:{rem_port}",
+                                    "state": state,
+                                    "proto": "TCP6" if "tcp6" in tcp_file else "TCP"
+                                }
+                                connections.append(conn)
+                                
+                                # Detect suspicious patterns
+                                if is_suspicious_connection(rem_ip, rem_port, state):
+                                    suspicious.append(conn)
+                            except:
+                                pass
+            except FileNotFoundError:
+                pass
+        
+        return {
+            "total_connections": len(connections),
+            "suspicious_count": len(suspicious),
+            "connections": connections[:50],
+            "suspicious": suspicious,
+            "detections": [
+                "Outbound persistence to non-standard ports",
+                "DNS over unusual protocols",
+                "Reverse shell indicators in connection patterns"
+            ] if suspicious else []
+        }
+    except Exception as e:
+        return {"error": str(e), "total_connections": 0, "suspicious_count": 0}
+
+
+def hex_to_ip_port(hex_str: str) -> Tuple[str, str]:
+    """Convert hex socket notation to IP:port."""
+    try:
+        hex_parts = hex_str.split(":")
+        if len(hex_parts) != 2:
+            return "0.0.0.0", "0"
+        
+        addr_hex = hex_parts[0]
+        port_hex = hex_parts[1]
+        
+        # Convert port from hex
+        port = int(port_hex, 16)
+        
+        # For IPv4, reverse bytes
+        if len(addr_hex) == 8:
+            addr_bytes = bytes.fromhex(addr_hex)
+            addr_bytes = addr_bytes[::-1]
+            ip = ".".join(str(b) for b in addr_bytes)
+        else:
+            # IPv6
+            ip = ":".join([addr_hex[i:i+2] for i in range(0, len(addr_hex), 2)])
+        
+        return ip, str(port)
+    except:
+        return "0.0.0.0", "0"
+
+
+def is_suspicious_connection(ip: str, port: str, state: str) -> bool:
+    """Detect suspicious connection patterns."""
+    port_num = int(port) if port.isdigit() else 0
+    
+    # Private networks shouldn't have external connections
+    if ip.startswith("127.") or ip.startswith("10.") or ip.startswith("192.168."):
+        return False
+    
+    # Suspicious ports and states
+    suspicious_ports = [4444, 5555, 6666, 7777, 8888, 9999, 31337, 12345, 27374, 6667, 31337]
+    if port_num in suspicious_ports:
+        return True
+    
+    # RDP/SSH to unusual IPs might indicate C2
+    if port_num in [22, 3389] and state == "01":  # ESTABLISHED
+        return True if not (ip.startswith("10.") or ip.startswith("192.168.")) else False
+    
+    return False
+
+
+def detect_suspicious_processes() -> Dict[str, Any]:
+    """Detect potentially malicious process patterns."""
+    suspicious = []
+    indicators = []
+    
+    try:
+        pids = [d for d in os.listdir("/proc") if d.isdigit()]
+        
+        for pid in pids:
+            try:
+                with open(f"/proc/{pid}/cmdline", "r") as f:
+                    cmdline = f.read().replace("\x00", " ").strip()
+                
+                with open(f"/proc/{pid}/stat", "r") as f:
+                    stat_data = f.read().split()
+                    ppid = int(stat_data[3]) if len(stat_data) > 3 else 0
+                
+                suspicion_score = 0
+                reasons = []
+                
+                # Check for suspicious patterns
+                malicious_keywords = [
+                    "wget", "curl", "nc", "ncat", "bash -i", "/dev/tcp", "python -c", 
+                    "perl -e", "|sh", "&sh", "LD_PRELOAD", "xxd", "xxd -r",
+                    "mkfifo", "/tmp/", "chmod +x", "curl http", "wget http"
+                ]
+                
+                for keyword in malicious_keywords:
+                    if keyword.lower() in cmdline.lower():
+                        suspicion_score += 15
+                        reasons.append(f"Found keyword: {keyword}")
+                
+                # Orphaned process (parent pid doesn't exist)
+                if ppid > 1:
+                    try:
+                        with open(f"/proc/{ppid}/cmdline", "r") as f:
+                            pass
+                    except FileNotFoundError:
+                        suspicion_score += 20
+                        reasons.append("Orphaned process (parent PID missing)")
+                
+                # Process with no visible command line but running
+                if not cmdline or cmdline.startswith("["):
+                    suspicion_score += 5
+                    reasons.append("Kernel thread or hidden binary")
+                
+                # Environment variable hiding
+                try:
+                    with open(f"/proc/{pid}/environ", "r") as f:
+                        environ = f.read()
+                        if "LD_PRELOAD" in environ or "LD_AUDIT" in environ:
+                            suspicion_score += 25
+                            reasons.append("Suspicious library preload detected")
+                except:
+                    pass
+                
+                if suspicion_score >= 20:
+                    suspicious.append({
+                        "pid": int(pid),
+                        "cmdline": cmdline[:150],
+                        "ppid": ppid,
+                        "score": suspicion_score,
+                        "reasons": reasons
+                    })
+                    
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                continue
+        
+        suspicious.sort(key=lambda x: x["score"], reverse=True)
+        
+        return {
+            "suspicious_count": len(suspicious),
+            "suspicious_processes": suspicious[:20],
+            "indicators": [
+                "Downloader/C2 scripts detected",
+                "Privilege escalation attempts",
+                "Memory injection patterns",
+                "Library preloading/hooking"
+            ] if suspicious else []
+        }
+    except Exception as e:
+        return {"error": str(e), "suspicious_count": 0}
+
+
+def detect_rootkit_indicators() -> Dict[str, Any]:
+    """Scan for common rootkit indicators."""
+    indicators = []
+    risk_score = 0
+    
+    try:
+        # Check for hidden processes via /proc inconsistency
+        proc_pids = set()
+        try:
+            proc_pids = set([int(d) for d in os.listdir("/proc") if d.isdigit()])
+        except:
+            pass
+        
+        # Check ps output for discrepancies
+        try:
+            ps_output = subprocess.check_output(["ps", "aux"], text=True, timeout=5)
+            ps_pids = set()
+            for line in ps_output.split("\n")[1:]:
+                parts = line.split()
+                if parts and parts[1].isdigit():
+                    ps_pids.add(int(parts[1]))
+            
+            hidden_pids = proc_pids - ps_pids
+            if hidden_pids:
+                risk_score += 30
+                indicators.append({
+                    "type": "HIDDEN_PROCESSES",
+                    "severity": "HIGH",
+                    "detail": f"Found {len(hidden_pids)} processes visible in /proc but not in ps output",
+                    "pids": list(hidden_pids)[:5]
+                })
+        except:
+            pass
+        
+        # Check for kernel module anomalies
+        try:
+            with open("/proc/modules", "r") as f:
+                modules = f.readlines()
+                suspicious_modules = []
+                for line in modules:
+                    parts = line.split()
+                    if parts and (parts[0].startswith("_") or len(parts[0]) < 3):
+                        suspicious_modules.append(parts[0])
+                
+                if suspicious_modules:
+                    risk_score += 15
+                    indicators.append({
+                        "type": "SUSPICIOUS_MODULES",
+                        "severity": "MEDIUM",
+                        "detail": f"Found {len(suspicious_modules)} suspicious kernel modules",
+                        "modules": suspicious_modules
+                    })
+        except:
+            pass
+        
+        # Check for kernel memory patches
+        try:
+            with open("/proc/sys/kernel/kptr_restrict", "r") as f:
+                kptr = int(f.read().strip())
+                if kptr == 0:
+                    indicators.append({
+                        "type": "WEAK_KERNEL_HARDENING",
+                        "severity": "MEDIUM",
+                        "detail": "Kernel pointer exposure enabled (kptr_restrict=0)"
+                    })
+        except:
+            pass
+        
+        return {
+            "risk_score": risk_score,
+            "indicators": indicators,
+            "rootkit_detected": risk_score >= 30,
+            "recommendations": [
+                "Perform deeper memory analysis with Volatility",
+                "Check running kernel modules with 'lsmod'",
+                "Compare /proc filesystem with external tools",
+                "Consider system memory dump for offline analysis"
+            ] if risk_score >= 15 else []
+        }
+    except Exception as e:
+        return {"error": str(e), "risk_score": 0, "indicators": []}
+
+
+def analyze_memory_anomalies() -> Dict[str, Any]:
+    """Analyze process memory maps for injection and anomalies."""
+    anomalies = []
+    
+    try:
+        pids = [d for d in os.listdir("/proc") if d.isdigit()]
+        
+        for pid in pids[:100]:  # Limit scan
+            try:
+                with open(f"/proc/{pid}/maps", "r") as f:
+                    maps = f.readlines()
+                    
+                    # Look for suspicious memory patterns
+                    rwx_ranges = []  # Write+Execute = dangerous
+                    for line in maps:
+                        perms = line.split()[1]
+                        if len(perms) >= 3:
+                            if perms[1] == 'w' and perms[2] == 'x':  # RWX or WX
+                                rwx_ranges.append(line.strip())
+                    
+                    if rwx_ranges:
+                        anomalies.append({
+                            "pid": int(pid),
+                            "type": "WRITABLE_EXECUTABLE_MEMORY",
+                            "severity": "HIGH",
+                            "count": len(rwx_ranges),
+                            "ranges": rwx_ranges[:3]
+                        })
+                
+                # Check for memory hoarding patterns
+                with open(f"/proc/{pid}/status", "r") as f:
+                    status_data = f.read()
+                    for line in status_data.split("\n"):
+                        if "VmPeak" in line or "VmHWM" in line:
+                            try:
+                                mem_kb = int(line.split()[-2])
+                                if mem_kb > 500000:  # 500MB+
+                                    anomalies.append({
+                                        "pid": int(pid),
+                                        "type": "EXCESSIVE_MEMORY_USAGE",
+                                        "severity": "MEDIUM",
+                                        "memory_mb": mem_kb // 1024,
+                                        "metric": line.split()[0]
+                                    })
+                            except:
+                                pass
+                
+            except (FileNotFoundError, PermissionError, ProcessLookupError):
+                continue
+        
+        return {
+            "anomalies_found": len(anomalies),
+            "anomalies": anomalies[:30],
+            "critical_count": len([a for a in anomalies if a.get("severity") == "HIGH"]),
+            "recommendations": [
+                "Investigate processes with RWX memory ranges",
+                "Dump suspicious process memory for analysis",
+                "Check for code injection or unpacking behavior"
+            ] if anomalies else []
+        }
+    except Exception as e:
+        return {"error": str(e), "anomalies_found": 0}
+
+
+def detect_anti_forensics() -> Dict[str, Any]:
+    """Detect anti-forensics and evidence destruction attempts."""
+    detections = []
+    
+    try:
+        # Check for secure deletion tools
+        suspicious_tools = [
+            "shred", "wipe", "srm", "ccleaner", "eraser", "cipher", 
+            "shadowcopy", "vssadmin", "dmg", "diskus", "secure-delete"
+        ]
+        
+        pids = [d for d in os.listdir("/proc") if d.isdigit()]
+        for pid in pids:
+            try:
+                with open(f"/proc/{pid}/cmdline", "r") as f:
+                    cmdline = f.read().replace("\x00", " ").lower()
+                
+                for tool in suspicious_tools:
+                    if tool in cmdline:
+                        detections.append({
+                            "pid": int(pid),
+                            "type": "EVIDENCE_DESTRUCTION_TOOL",
+                            "severity": "CRITICAL",
+                            "tool": tool,
+                            "cmdline": cmdline[:200]
+                        })
+            except:
+                pass
+        
+        # Check for log tampering attempts
+        try:
+            with open("/proc/sys/kernel/printk", "r") as f:
+                printk_level = int(f.read().split()[0])
+                if printk_level >= 3:
+                    detections.append({
+                        "type": "LOG_SUPPRESSION",
+                        "severity": "HIGH",
+                        "detail": f"Kernel printk level set to {printk_level} (may suppress logging)"
+                    })
+        except:
+            pass
+        
+        # Check for audit disabling
+        try:
+            import subprocess
+            audit_status = subprocess.check_output(["auditctl", "-l"], text=True, timeout=2)
+            if not audit_status or "No rules" in audit_status:
+                detections.append({
+                    "type": "AUDIT_DISABLED",
+                    "severity": "HIGH",
+                    "detail": "Linux Audit framework is not logging"
+                })
+        except:
+            pass
+        
+        return {
+            "anti_forensics_detected": len(detections) > 0,
+            "detections": detections,
+            "risk_level": "CRITICAL" if len(detections) >= 2 else ("HIGH" if detections else "LOW"),
+            "recommendations": [
+                "Image the system immediately",
+                "Monitor all file deletion attempts",
+                "Preserve this memory snapshot",
+                "Investigate all detected processes"
+            ] if detections else []
+        }
+    except Exception as e:
+        return {"error": str(e), "anti_forensics_detected": False, "detections": []}
+
+
+def get_system_integrity_metrics() -> Dict[str, Any]:
+    """Generate overall system integrity scoring."""
+    metrics = {
+        "timestamp": time.time(),
+        "overall_integrity": 0,
+        "checks": {}
+    }
+    
+    integrity_score = 100
+    
+    # Check system uptime (too long might indicate persistent threat)
+    try:
+        with open("/proc/uptime", "r") as f:
+            uptime_seconds = float(f.read().split()[0])
+            uptime_days = uptime_seconds / 86400
+            
+            metrics["checks"]["uptime"] = {
+                "days": round(uptime_days, 1),
+                "status": "LONG_UPTIME" if uptime_days > 365 else "NORMAL"
+            }
+            if uptime_days > 365:
+                integrity_score -= 10
+    except:
+        pass
+    
+    # Check for SELinux/AppArmor status
+    try:
+        import subprocess
+        selinux_status = subprocess.check_output(["getenforce"], text=True, timeout=2).strip()
+        metrics["checks"]["selinux"] = {
+            "status": selinux_status,
+            "enforced": selinux_status in ["Enforcing", "Enforced"]
+        }
+        if selinux_status == "Disabled":
+            integrity_score -= 15
+    except:
+        pass
+    
+    # Check system load for anomalies
+    try:
+        with open("/proc/loadavg", "r") as f:
+            loads = f.read().split()[:3]
+            current_load = float(loads[0])
+            metrics["checks"]["system_load"] = {
+                "current": current_load,
+                "status": "HIGH" if current_load > 4 else "NORMAL"
+            }
+            if current_load > 8:
+                integrity_score -= 20
+    except:
+        pass
+    
+    metrics["overall_integrity"] = max(0, integrity_score)
+    metrics["health_status"] = (
+        "COMPROMISED" if integrity_score < 40 
+        else "SUSPICIOUS" if integrity_score < 70 
+        else "HEALTHY"
+    )
+    
+    return metrics

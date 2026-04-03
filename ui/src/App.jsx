@@ -92,6 +92,15 @@ const apiMemoryAI = () => post("/memory/ai-analysis", {});
 const apiMemoryDumpUpload = (formData) => fetch(`${API}/memory/upload`, { method: "POST", body: formData }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
 const apiMemoryDumpAI = (reportData) => post("/memory/analyze-dump/ai", { report_data: reportData });
 
+// Advanced Forensic Analysis APIs
+const apiNetworkAnalysis = () => get("/memory/network-analysis");
+const apiSuspiciousProcesses = () => get("/memory/suspicious-processes");
+const apiRootkitScan = () => get("/memory/rootkit-scan");
+const apiMemoryAnomalies = () => get("/memory/anomalies");
+const apiAntiForensics = () => get("/memory/anti-forensics");
+const apiSystemIntegrity = () => get("/memory/integrity-metrics");
+const apiForensicSummary = () => get("/memory/forensic-summary");
+
 // ─── Severity / icon helpers ──────────────────────────────────────────────────
 const SEV_COLOR = { critical: "#7f1d1d", high: "#dc2626", medium: "#d97706", low: "#16a34a", info: "#2563eb" };
 const SEV_BG = { critical: "#fef2f2", high: "#fff1f0", medium: "#fffbeb", low: "#f0fdf4", info: "#eff6ff" };
@@ -7778,6 +7787,15 @@ function MemoryAnalyser() {
   const [uploading, setUploading] = useState(false);
   const timer = useRef(null);
   const [typedInsight, setTypedInsight] = useState("");
+  
+  // Advanced forensic analysis data
+  const [networkData, setNetworkData] = useState(null);
+  const [suspiciousProcs, setSuspiciousProcs] = useState(null);
+  const [rootkitData, setRootkitData] = useState(null);
+  const [anomaliesData, setAnomaliesData] = useState(null);
+  const [antiForensicsData, setAntiForensicsData] = useState(null);
+  const [integrityData, setIntegrityData] = useState(null);
+  const [advLoading, setAdvLoading] = useState({});
 
   const fetchData = useCallback(async () => {
     if (analysisMode === "dump") return;
@@ -7799,6 +7817,36 @@ function MemoryAnalyser() {
       return () => clearInterval(timer.current);
     }
   }, [fetchData, analysisMode]);
+
+  // Unified fetch function for advanced analysis
+  const fetchAdvancedAnalysis = async (analysisType, apiFunc, setData) => {
+    setAdvLoading(prev => ({ ...prev, [analysisType]: true }));
+    try {
+      const res = await apiFunc();
+      setData(res);
+    } catch (e) {
+      console.error(`Error fetching ${analysisType}:`, e);
+    } finally {
+      setAdvLoading(prev => ({ ...prev, [analysisType]: false }));
+    }
+  };
+
+  // Auto-fetch advanced analyses for live mode
+  useEffect(() => {
+    if (analysisMode === "live" && data && activeSubTab !== "monitor" && activeSubTab !== "processes" && activeSubTab !== "report") {
+      const analysisMap = {
+        "network": [apiNetworkAnalysis, setNetworkData],
+        "rootkit": [apiRootkitScan, setRootkitData],
+        "anomalies": [apiMemoryAnomalies, setAnomaliesData],
+        "antiforensics": [apiAntiForensics, setAntiForensicsData],
+        "integrity": [apiSystemIntegrity, setIntegrityData]
+      };
+      
+      if (analysisMap[activeSubTab]) {
+        fetchAdvancedAnalysis(activeSubTab, analysisMap[activeSubTab][0], analysisMap[activeSubTab][1]);
+      }
+    }
+  }, [activeSubTab, analysisMode, data]);
 
   async function getAI() {
     setAiLoading(true);
@@ -7865,6 +7913,7 @@ function MemoryAnalyser() {
   const connections = dumpReport?.connections || [];
   
   const usedPct = ram.used_pct || 0;
+  const gaugeColor = usedPct > 80 ? "#dc2626" : (usedPct > 60 ? "#d97706" : "#2563eb");
 
   // SVG Progress Ring constants
   const size = 180;
@@ -7882,7 +7931,7 @@ function MemoryAnalyser() {
   };
 
   return (
-    <div className="tab-content memory-analyser memory-white-theme animate-fade-in">
+    <div className="tab-content memory-analyser animate-fade-in">
       <div className="ma-header">
         <div className="ma-title">
           <div className="title-icon-wrapper"><Cpu size={24} /></div>
@@ -7916,9 +7965,26 @@ function MemoryAnalyser() {
 
       <div className="ma-tabs-nav">
         {analysisMode === "live" && (
-          <button className={`ma-tab-btn ${activeSubTab === "monitor" ? "active" : ""}`} onClick={() => setActiveSubTab("monitor")}>
-            <Activity size={14} className="mr-1" /> System Monitor
-          </button>
+          <>
+            <button className={`ma-tab-btn ${activeSubTab === "monitor" ? "active" : ""}`} onClick={() => setActiveSubTab("monitor")}>
+              <Activity size={14} className="mr-1" /> System Monitor
+            </button>
+            <button className={`ma-tab-btn ${activeSubTab === "network" ? "active" : ""}`} onClick={() => setActiveSubTab("network")}>
+              <Wifi size={14} className="mr-1" /> Network
+            </button>
+            <button className={`ma-tab-btn ${activeSubTab === "rootkit" ? "active" : ""}`} onClick={() => setActiveSubTab("rootkit")}>
+              <ShieldAlert size={14} className="mr-1" /> Rootkit Scan
+            </button>
+            <button className={`ma-tab-btn ${activeSubTab === "anomalies" ? "active" : ""}`} onClick={() => setActiveSubTab("anomalies")}>
+              <AlertTriangle size={14} className="mr-1" /> Anomalies
+            </button>
+            <button className={`ma-tab-btn ${activeSubTab === "antiforensics" ? "active" : ""}`} onClick={() => setActiveSubTab("antiforensics")}>
+              <Eye size={14} className="mr-1" /> Anti-Forensics
+            </button>
+            <button className={`ma-tab-btn ${activeSubTab === "integrity" ? "active" : ""}`} onClick={() => setActiveSubTab("integrity")}>
+              <Shield size={14} className="mr-1" /> System Health
+            </button>
+          </>
         )}
         <button className={`ma-tab-btn ${activeSubTab === "processes" ? "active" : ""}`} onClick={() => setActiveSubTab("processes")}>
           <List size={14} className="mr-1" /> Process List
@@ -7965,13 +8031,21 @@ function MemoryAnalyser() {
               </div>
               
               <div className="usage-visual-container">
-                <svg width={size} height={size} className="progress-ring">
-                  <circle className="progress-ring-bg" stroke="#f1f5f9" strokeWidth={stroke} fill="transparent" r={radius} cx={size / 2} cy={size / 2} />
-                  <circle className={`progress-ring-fill ${usedPct > 85 ? "pulse-danger" : ""}`} stroke={usedPct > 80 ? "#ef4444" : (usedPct > 60 ? "#f59e0b" : "#2563eb")} strokeWidth={stroke} strokeDasharray={`${circ} ${circ}`} style={{ strokeDashoffset: offset }} strokeLinecap="round" fill="transparent" r={radius} cx={size / 2} cy={size / 2} />
-                </svg>
-                <div className="usage-overlay">
-                  <span className="usage-number" style={{ color: "var(--wf-text)" }}>{Math.round(usedPct)}%</span>
-                  <span className="usage-label">Used</span>
+                <div className="usage-gauge" style={{ "--usage-angle": `${Math.max(0, Math.min(100, usedPct)) * 3.6}deg`, "--usage-color": gaugeColor }}>
+                  <div className="usage-gauge-inner">
+                    <span className="usage-number">{Math.round(usedPct)}%</span>
+                    <span className="usage-label">Used</span>
+                    <span className="usage-subtext">{fmtSize(ram.used_kb * 1024)} of {fmtSize(ram.total_kb * 1024)}</span>
+                  </div>
+                </div>
+                <div className="usage-bar-wrap">
+                  <div className="usage-bar-meta">
+                    <span>Memory pressure</span>
+                    <span>{usedPct > 80 ? "High" : (usedPct > 60 ? "Moderate" : "Normal")}</span>
+                  </div>
+                  <div className="usage-bar-track" aria-hidden="true">
+                    <div className="usage-bar-fill" style={{ width: `${Math.max(0, Math.min(100, usedPct))}%`, background: gaugeColor }} />
+                  </div>
                 </div>
               </div>
 
@@ -8218,6 +8292,265 @@ function MemoryAnalyser() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {activeSubTab === "network" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Wifi size={16} /> Network Connection Analysis</h3>
+              {advLoading.network && <Loader2 size={16} className="spin" />}
+            </div>
+            {!networkData ? (
+              <div className="empty-state" style={{ padding: "40px" }}>
+                <Loader2 size={24} className="spin" />
+                <p style={{ color: "var(--wf-text-muted)", marginTop: "12px" }}>Analyzing active connections…</p>
+              </div>
+            ) : (
+              <div className="forensic-content">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+                  <div className="stat-card"><strong>{networkData.total_connections || 0}</strong><span>Total Connections</span></div>
+                  <div className="stat-card"><strong style={{ color: networkData.suspicious_count > 0 ? "#dc2626" : "#10b981" }}>{networkData.suspicious_count || 0}</strong><span>Suspicious</span></div>
+                </div>
+                {networkData.suspicious && networkData.suspicious.length > 0 && (
+                  <div className="alert-box">
+                    <div className="alert-title">Suspicious Connections Detected</div>
+                    <table className="forensic-table" style={{ marginTop: "10px" }}>
+                      <thead><tr><th>Protocol</th><th>Local</th><th>Remote</th><th>State</th></tr></thead>
+                      <tbody>
+                        {networkData.suspicious.map((conn, i) => (
+                          <tr key={i}>
+                            <td><span className="status-pill warning">{conn.proto}</span></td>
+                            <td><code>{conn.local}</code></td>
+                            <td><code style={{ color: "#dc2626" }}>{conn.remote}</code></td>
+                            <td>{conn.state}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {networkData.connections && networkData.connections.slice(0, 20).length > 0 && (
+                  <table className="forensic-table">
+                    <thead><tr><th>Protocol</th><th>Local Address</th><th>Remote Address</th><th>State</th></tr></thead>
+                    <tbody>
+                      {networkData.connections.slice(0, 20).map((conn, i) => (
+                        <tr key={i}>
+                          <td><span className="status-pill info">{conn.proto}</span></td>
+                          <td><code>{conn.local}</code></td>
+                          <td><code>{conn.remote}</code></td>
+                          <td>{conn.state}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSubTab === "rootkit" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><ShieldAlert size={16} /> Rootkit & Hidden Process Detection</h3>
+              {advLoading.rootkit && <Loader2 size={16} className="spin" />}
+            </div>
+            {!rootkitData ? (
+              <div className="empty-state" style={{ padding: "40px" }}>
+                <Loader2 size={24} className="spin" />
+                <p style={{ color: "var(--wf-text-muted)", marginTop: "12px" }}>Scanning for rootkit indicators…</p>
+              </div>
+            ) : (
+              <div className="forensic-content">
+                <div style={{ marginBottom: "20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+                    <div style={{ fontSize: "24px", fontWeight: "700", color: rootkitData.risk_score >= 30 ? "#dc2626" : (rootkitData.risk_score >= 15 ? "#f59e0b" : "#10b981") }}>
+                      {rootkitData.risk_score || 0}
+                    </div>
+                    <div>
+                      <div className="alert-title">Risk Score</div>
+                      <div style={{ fontSize: "12px", color: "var(--wf-text-muted)" }}>{rootkitData.rootkit_detected ? "Potential threat" : "No indicators"}</div>
+                    </div>
+                  </div>
+                </div>
+                {rootkitData.indicators && rootkitData.indicators.length > 0 && (
+                  <div className="forensic-grid" style={{ gap: "12px", marginBottom: "20px" }}>
+                    {rootkitData.indicators.map((ind, i) => (
+                      <div key={i} className="alert-box">
+                        <div className="alert-title">{ind.type}</div>
+                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px" }}>
+                          Severity: <span className={`risk-badge ${ind.severity?.toLowerCase()}`}>{ind.severity}</span>
+                        </div>
+                        <div className="alert-detail">{ind.detail}</div>
+                        {ind.pids && <div style={{ fontSize: "11px", color: "#666", marginTop: "8px" }}>PIDs: {ind.pids.join(", ")}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {rootkitData.recommendations && rootkitData.recommendations.length > 0 && (
+                  <div className="alert-box" style={{ background: "#fef3c7", borderLeft: "4px solid #f59e0b" }}>
+                    <div className="alert-title">Recommendations</div>
+                    <ul style={{ margin: "8px 0 0 0", paddingLeft: "20px", fontSize: "12px" }}>
+                      {rootkitData.recommendations.map((rec, i) => <li key={i}>{rec}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSubTab === "anomalies" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><AlertTriangle size={16} /> Memory Anomalies & Injections</h3>
+              {advLoading.anomalies && <Loader2 size={16} className="spin" />}
+            </div>
+            {!anomaliesData ? (
+              <div className="empty-state" style={{ padding: "40px" }}>
+                <Loader2 size={24} className="spin" />
+                <p style={{ color: "var(--wf-text-muted)", marginTop: "12px" }}>Analyzing process memory maps…</p>
+              </div>
+            ) : (
+              <div className="forensic-content">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+                  <div className="stat-card"><strong style={{ color: anomaliesData.critical_count > 0 ? "#dc2626" : "#2563eb" }}>{anomaliesData.anomalies_found || 0}</strong><span>Anomalies Found</span></div>
+                  <div className="stat-card"><strong style={{ color: "#dc2626" }}>{anomaliesData.critical_count || 0}</strong><span>Critical Issues</span></div>
+                </div>
+                {anomaliesData.anomalies && anomaliesData.anomalies.length > 0 ? (
+                  <table className="forensic-table">
+                    <thead><tr><th width="60">PID</th><th width="200">Type</th><th width="80">Severity</th><th>Details</th></tr></thead>
+                    <tbody>
+                      {anomaliesData.anomalies.slice(0, 30).map((anom, i) => (
+                        <tr key={i}>
+                          <td><code className="pid-badge">{anom.pid}</code></td>
+                          <td><strong>{anom.type}</strong></td>
+                          <td><span className={`risk-badge ${anom.severity?.toLowerCase()}`}>{anom.severity}</span></td>
+                          <td style={{ fontSize: "12px" }}>{anom.detail || `${anom.memory_mb}MB` || `${anom.count} ranges`}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="empty-state" style={{ padding: "40px" }}>
+                    <CheckCircle size={48} style={{ color: "#10b981", opacity: 0.5 }} />
+                    <p style={{ color: "var(--wf-text-muted)", marginTop: "12px" }}>No memory anomalies detected</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSubTab === "antiforensics" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Eye size={16} /> Anti-Forensics Detection</h3>
+              {advLoading.antiforensics && <Loader2 size={16} className="spin" />}
+            </div>
+            {!antiForensicsData ? (
+              <div className="empty-state" style={{ padding: "40px" }}>
+                <Loader2 size={24} className="spin" />
+                <p style={{ color: "var(--wf-text-muted)", marginTop: "12px" }}>Detecting anti-forensics tools…</p>
+              </div>
+            ) : (
+              <div className="forensic-content">
+                {antiForensicsData.anti_forensics_detected && (
+                  <div className="alert-box" style={{ background: "#fef2f2", borderLeft: "4px solid #dc2626" }}>
+                    <div className="alert-title" style={{ color: "#dc2626" }}>Critical: Anti-Forensics Activity Detected</div>
+                    <div style={{ fontSize: "12px", color: "#991b1b", marginTop: "8px" }}>Risk Level: <strong>{antiForensicsData.risk_level}</strong></div>
+                  </div>
+                )}
+                {antiForensicsData.detections && antiForensicsData.detections.length > 0 ? (
+                  <div style={{ marginTop: "20px" }}>
+                    <h4 style={{ marginBottom: "12px", color: "var(--wf-text)" }}>Detected Threats:</h4>
+                    {antiForensicsData.detections.map((det, i) => (
+                      <div key={i} className="alert-box" style={{ marginBottom: "10px" }}>
+                        <div  className="alert-title">{det.type} {det.pid && `(PID: ${det.pid})`}</div>
+                        <span className={`risk-badge ${det.severity?.toLowerCase()}`} style={{ marginBottom: "8px", display: "inline-block" }}>{det.severity}</span>
+                        <div className="alert-detail">{det.detail || det.cmdline}</div>
+                        {det.tool && <div style={{ fontSize: "11px", fontFamily: "monospace", marginTop: "6px", color: "var(--wf-text-muted)" }}>Tool: {det.tool}</div>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state" style={{ padding: "40px" }}>
+                    <CheckCircle size={48} style={{ color: "#10b981", opacity: 0.5 }} />
+                    <p style={{ color: "var(--wf-text-muted)", marginTop: "12px" }}>No anti-forensics tools detected</p>
+                  </div>
+                )}
+                {antiForensicsData.recommendations && antiForensicsData.recommendations.length > 0 && (
+                  <div className="alert-box" style={{ background: "#fffbeb", borderLeft: "4px solid #f59e0b", marginTop: "20px" }}>
+                    <div className="alert-title">Immediate Actions Required</div>
+                    <ul style={{ margin: "8px 0 0 0", paddingLeft: "20px", fontSize: "12px" }}>
+                      {antiForensicsData.recommendations.map((rec, i) => <li key={i}>{rec}</li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSubTab === "integrity" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Shield size={16} /> System Integrity & Health Metrics</h3>
+              {advLoading.integrity && <Loader2 size={16} className="spin" />}
+            </div>
+            {!integrityData ? (
+              <div className="empty-state" style={{ padding: "40px" }}>
+                <Loader2 size={24} className="spin" />
+                <p style={{ color: "var(--wf-text-muted)", marginTop: "12px" }}>Calculating system integrity…</p>
+              </div>
+            ) : (
+              <div className="forensic-content">
+                <div style={{ marginBottom: "24px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "16px" }}>
+                    <div style={{ 
+                      fontSize: "48px", 
+                      fontWeight: "800", 
+                      color: integrityData.health_status === "HEALTHY" ? "#10b981" : integrityData.health_status === "SUSPICIOUS" ? "#f59e0b" : "#dc2626"
+                    }}>
+                      {integrityData.overall_integrity}%
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--wf-text)" }}>System Integrity Score</div>
+                      <div style={{ fontSize: "13px", color: "var(--wf-text-muted)", marginTop: "4px" }}>Status: 
+                        <span style={{ 
+                          marginLeft: "8px", 
+                          fontWeight: "700",
+                          color: integrityData.health_status === "HEALTHY" ? "#10b981" : integrityData.health_status === "SUSPICIOUS" ? "#f59e0b" : "#dc2626"
+                        }}>
+                          {integrityData.health_status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {integrityData.checks && Object.keys(integrityData.checks).length > 0 && (
+                  <div className="forensic-grid" style={{ gap: "12px" }}>
+                    {Object.entries(integrityData.checks).map(([checkName, checkData], i) => (
+                      <div key={i} className="alert-box">
+                        <div className="alert-title">{checkName.toUpperCase().replace(/_/g, " ")}</div>
+                        <div className="alert-detail">
+                          {typeof checkData === "object" ? (
+                            <div style={{ fontSize: "12px" }}>
+                              {Object.entries(checkData).map(([k, v]) => (
+                                <div key={k}>{k}: <strong>{String(v)}</strong></div>
+                              ))}
+                            </div>
+                          ) : (
+                            String(checkData)
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
