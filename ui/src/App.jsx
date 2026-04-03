@@ -7786,6 +7786,12 @@ function MemoryAnalyser() {
   const [dumpReport, setDumpReport] = useState(null);
   const [uploading, setUploading] = useState(false);
   const timer = useRef(null);
+  const moreTabsRef = useRef(null);
+  const memTabbarRef = useRef(null);
+  const memMeasureWrapRef = useRef(null);
+  const memMoreMeasureRef = useRef(null);
+  const [moreTabsOpen, setMoreTabsOpen] = useState(false);
+  const [visibleMemTabIds, setVisibleMemTabIds] = useState(null);
   const [typedInsight, setTypedInsight] = useState("");
   
   // Advanced forensic analysis data
@@ -7847,6 +7853,141 @@ function MemoryAnalyser() {
       }
     }
   }, [activeSubTab, analysisMode, data]);
+
+  useEffect(() => {
+    const onClickOutside = (event) => {
+      if (moreTabsRef.current && !moreTabsRef.current.contains(event.target)) {
+        setMoreTabsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const liveAllTabs = [
+    { id: "monitor", label: "System Monitor", icon: Activity },
+    { id: "processes", label: "Process List", icon: List },
+    { id: "network", label: "Network", icon: Wifi },
+    { id: "report", label: "AI Forensic Report", icon: FileText },
+    { id: "tree", label: "Process Tree", icon: Network },
+    { id: "libraries", label: "Modules", icon: Box },
+    { id: "injections", label: "Injection", icon: ShieldAlert },
+    { id: "handles", label: "Handles", icon: Paperclip },
+    { id: "privileges", label: "Privileges", icon: Key },
+    { id: "threads", label: "Threads", icon: Users },
+    { id: "credentials", label: "Credentials", icon: Lock },
+    { id: "kernel", label: "Kernel", icon: Server },
+    { id: "timeline", label: "Timeline", icon: Clock },
+    { id: "rootkit", label: "Rootkit Scan", icon: ShieldAlert },
+    { id: "anomalies", label: "Anomalies", icon: AlertTriangle },
+    { id: "antiforensics", label: "Anti-Forensics", icon: Eye },
+    { id: "integrity", label: "System Health", icon: Shield },
+  ];
+
+  const dumpAllTabs = [
+    { id: "processes", label: "Process List", icon: List },
+    { id: "hidden", label: "Hidden Tasks", icon: Eye },
+    { id: "report", label: "AI Forensic Report", icon: FileText },
+    { id: "bash", label: "Bash History", icon: Terminal },
+    { id: "malfind", label: "Malfind", icon: Shield },
+    { id: "modules", label: "Kernel Modules", icon: Archive },
+    { id: "files", label: "Open Files", icon: Paperclip },
+    { id: "maps", label: "Shared Libraries", icon: Link },
+    { id: "network", label: "Connections", icon: Wifi },
+  ];
+
+  const memoryTabs = analysisMode === "live" ? liveAllTabs : dumpAllTabs;
+
+  useEffect(() => {
+    function recalcVisibleTabs() {
+      const barW = memTabbarRef.current?.clientWidth || 0;
+      const measureWrap = memMeasureWrapRef.current;
+      const order = memoryTabs.map((t) => t.id);
+      if (!barW || !measureWrap) {
+        setVisibleMemTabIds(order);
+        return;
+      }
+
+      const widthById = new Map();
+      for (const n of measureWrap.querySelectorAll("[data-mem-tab-id]")) {
+        widthById.set(n.getAttribute("data-mem-tab-id"), n.getBoundingClientRect().width);
+      }
+      if (!widthById.size) {
+        setVisibleMemTabIds(order);
+        return;
+      }
+
+      const gap = 8;
+      const moreW = (memMoreMeasureRef.current?.getBoundingClientRect().width || 84) + gap;
+
+      let used = 0;
+      const ids = [];
+      for (const id of order) {
+        const w = (widthById.get(id) || 88) + (ids.length > 0 ? gap : 0);
+        if (used + w <= barW) {
+          ids.push(id);
+          used += w;
+        } else {
+          break;
+        }
+      }
+
+      if (!ids.length) {
+        setVisibleMemTabIds(order);
+        return;
+      }
+
+      const allFit = ids.length === order.length;
+      if (!allFit) {
+        while (ids.length > 1 && used + moreW > barW) {
+          const removed = ids.pop();
+          const rw = (widthById.get(removed) || 88) + (ids.length > 0 ? gap : 0);
+          used -= rw;
+        }
+      }
+
+      if (!ids.includes(activeSubTab)) {
+        const base = [activeSubTab, ...order.filter((id) => id !== activeSubTab)];
+        let u2 = 0;
+        const keep = [];
+        for (const id of base) {
+          const w = (widthById.get(id) || 88) + (keep.length > 0 ? gap : 0);
+          if (u2 + w <= barW) {
+            keep.push(id);
+            u2 += w;
+          } else {
+            break;
+          }
+        }
+        const allFit2 = keep.length === order.length;
+        if (!allFit2) {
+          while (keep.length > 1 && u2 + moreW > barW) {
+            const removed = keep.pop();
+            const rw = (widthById.get(removed) || 88) + (keep.length > 0 ? gap : 0);
+            u2 -= rw;
+          }
+        }
+        setVisibleMemTabIds(keep);
+      } else {
+        setVisibleMemTabIds(ids);
+      }
+    }
+
+    recalcVisibleTabs();
+    const raf = requestAnimationFrame(recalcVisibleTabs);
+    const ro = new ResizeObserver(recalcVisibleTabs);
+    if (memTabbarRef.current) ro.observe(memTabbarRef.current);
+    window.addEventListener("resize", recalcVisibleTabs);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener("resize", recalcVisibleTabs);
+    };
+  }, [analysisMode, activeSubTab]);
+
+  useEffect(() => {
+    setMoreTabsOpen(false);
+  }, [analysisMode, activeSubTab]);
 
   async function getAI() {
     setAiLoading(true);
@@ -7911,6 +8052,88 @@ function MemoryAnalyser() {
   const hiddenProcs = dumpReport?.hidden_processes || [];
   const malfind = dumpReport?.malfind || [];
   const connections = dumpReport?.connections || [];
+  const processTree = analysisMode === "live" ? (data?.process_tree || { summary: {}, tree: [], orphans: [] }) : {
+    summary: { total_processes: procs.length, root_processes: 0, orphan_processes: 0 },
+    tree: procs.slice(0, 30).map((p) => ({ pid: p.pid, ppid: p.ppid || 0, name: p.name, cmdline: p.cmdline, memory_kb: p.memory_kb, children: [] })),
+    orphans: [],
+  };
+  const libraries = analysisMode === "live" ? (data?.libraries || { libraries: [], suspicious: [], summary: {} }) : {
+    libraries: (dumpReport?.shared_libraries || []).map((m) => ({ path: m.path, count: 1, processes: [m.pid], suspicious: false, reasons: [] })),
+    suspicious: [],
+    summary: { unique_libraries: (dumpReport?.shared_libraries || []).length, suspicious_libraries: 0 },
+  };
+  const injections = analysisMode === "live" ? (data?.injections || { findings: [], summary: {} }) : {
+    findings: (dumpReport?.malfind || []).map((m) => ({
+      pid: m.pid,
+      process: m.process,
+      region: m.address,
+      permissions: m.protection,
+      path: "",
+      severity: "high",
+      reasons: ["Volatility malfind result"],
+    })),
+    summary: { count: dumpReport?.malfind?.length || 0, critical: dumpReport?.malfind?.length || 0 },
+  };
+  const handles = analysisMode === "live" ? (data?.handles || { handles: [], sensitive_handles: [], summary: {} }) : {
+    handles: (dumpReport?.open_files || []).map((f) => ({ pid: f.pid, process: f.process, fd: f.fd, target: f.path, category: "file" })),
+    sensitive_handles: (dumpReport?.open_files || []).map((f) => ({ pid: f.pid, process: f.process, fd: f.fd, target: f.path, category: "file" })).filter((h) => /ssh|shadow|sudo|key|wallet|gnupg/i.test(h.target)),
+    summary: { total_handles: (dumpReport?.open_files || []).length, sensitive_handles: (dumpReport?.open_files || []).filter((f) => /ssh|shadow|sudo|key|wallet|gnupg/i.test(f.path)).length },
+  };
+  const privileges = analysisMode === "live" ? (data?.privileges || { processes: [], notable: [], summary: {} }) : {
+    processes: procs.map((p) => ({ pid: p.pid, process: p.name, uids: "-", gids: "-", capabilities: [], no_new_privs: "-", seccomp: "-", elevated: false })),
+    notable: [],
+    summary: { total_processes: procs.length, elevated_processes: 0 },
+  };
+  const threads = analysisMode === "live" ? (data?.threads || { processes: [], suspicious: [], summary: {} }) : { processes: [], suspicious: [], summary: { tracked_processes: 0, suspicious_thread_groups: 0 } };
+  const credentials = analysisMode === "live" ? (data?.credentials || { findings: [], summary: {} }) : { findings: [], summary: { credential_artifacts: 0, high_risk: 0 } };
+  const kernel = analysisMode === "live" ? (data?.kernel || { modules: [], summary: {}, flags: [] }) : { modules: (dumpReport?.modules || []).map((m) => ({ name: m.name, size: m.size, refcount: 0, deps: "", state: "", offset: m.offset })), summary: { module_count: (dumpReport?.modules || []).length, tainted: "0", kptr_restrict: "" }, flags: [] };
+  const timeline = analysisMode === "live" ? (data?.timeline || { events: [], summary: {} }) : { events: [], summary: { events: 0 } };
+  const flattenProcessTree = (nodes = [], depth = 0, out = []) => {
+    (nodes || []).forEach((node) => {
+      out.push({ ...node, depth });
+      if (node.children && node.children.length) flattenProcessTree(node.children, depth + 1, out);
+    });
+    return out;
+  };
+  const treeRows = flattenProcessTree(processTree.tree || []);
+  const libraryRows = (libraries.libraries || []).slice(0, 100);
+  const injectionRows = (injections.findings || []).slice(0, 100);
+  const handleRows = (handles.handles || []).slice(0, 150);
+  const sensitiveHandleRows = (handles.sensitive_handles || []).slice(0, 50);
+  const privilegeRows = (privileges.processes || []).slice(0, 150);
+  const notablePrivileges = (privileges.notable || []).slice(0, 50);
+  const threadRows = (threads.processes || []).slice(0, 150);
+  const suspiciousThreads = (threads.suspicious || []).slice(0, 50);
+  const credentialRows = (credentials.findings || []).slice(0, 100);
+  const kernelModules = (kernel.modules || []).slice(0, 120);
+  const timelineRows = (timeline.events || []).slice(0, 150);
+  const liveSummary = analysisMode === "live"
+    ? {
+        suspiciousProcesses: data?.suspicious_processes?.suspicious_count ?? 0,
+        injections: data?.injections?.summary?.count ?? 0,
+        elevatedProcesses: data?.privileges?.summary?.elevated_processes ?? 0,
+        sensitiveHandles: data?.handles?.summary?.sensitive_handles ?? 0,
+        credentialArtifacts: data?.credentials?.summary?.credential_artifacts ?? 0,
+        kernelModules: data?.kernel?.summary?.module_count ?? 0,
+        kernelTaint: data?.kernel?.summary?.tainted ?? "0",
+        orphans: data?.process_tree?.summary?.orphan_processes ?? 0,
+      }
+    : {
+        suspiciousProcesses: hiddenProcs.length,
+        injections: malfind.length,
+        elevatedProcesses: 0,
+        sensitiveHandles: (dumpReport?.open_files || []).length,
+        credentialArtifacts: (dumpReport?.bash_history || []).length,
+        kernelModules: (dumpReport?.modules || []).length,
+        kernelTaint: "0",
+        orphans: 0,
+      };
+
+  const activeVisibleIds = Array.isArray(visibleMemTabIds) && visibleMemTabIds.length
+    ? visibleMemTabIds
+    : memoryTabs.map((t) => t.id);
+  const visibleTabs = memoryTabs.filter((t) => activeVisibleIds.includes(t.id));
+  const hiddenTabs = memoryTabs.filter((t) => !activeVisibleIds.includes(t.id));
   
   const usedPct = ram.used_pct || 0;
   const gaugeColor = usedPct > 80 ? "#dc2626" : (usedPct > 60 ? "#d97706" : "#2563eb");
@@ -7963,60 +8186,46 @@ function MemoryAnalyser() {
         </div>
       </div>
 
-      <div className="ma-tabs-nav">
-        {analysisMode === "live" && (
-          <>
-            <button className={`ma-tab-btn ${activeSubTab === "monitor" ? "active" : ""}`} onClick={() => setActiveSubTab("monitor")}>
-              <Activity size={14} className="mr-1" /> System Monitor
+      <div className="ma-tabs-nav" ref={memTabbarRef}>
+        {visibleTabs.map(({ id, label, icon: Icon }) => (
+          <button key={id} className={`ma-tab-btn ${activeSubTab === id ? "active" : ""}`} onClick={() => { setActiveSubTab(id); setMoreTabsOpen(false); }}>
+            <Icon size={14} className="mr-1" /> {label}
+          </button>
+        ))}
+
+        {hiddenTabs.length > 0 && (
+          <div className="ma-tabs-more" ref={moreTabsRef}>
+            <button
+              className={`ma-tab-btn ma-more-btn ${moreTabsOpen ? "active" : ""}`}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setMoreTabsOpen((v) => !v);
+              }}
+            >
+              <Plus size={14} className="mr-1" /> More
             </button>
-            <button className={`ma-tab-btn ${activeSubTab === "network" ? "active" : ""}`} onClick={() => setActiveSubTab("network")}>
-              <Wifi size={14} className="mr-1" /> Network
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "rootkit" ? "active" : ""}`} onClick={() => setActiveSubTab("rootkit")}>
-              <ShieldAlert size={14} className="mr-1" /> Rootkit Scan
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "anomalies" ? "active" : ""}`} onClick={() => setActiveSubTab("anomalies")}>
-              <AlertTriangle size={14} className="mr-1" /> Anomalies
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "antiforensics" ? "active" : ""}`} onClick={() => setActiveSubTab("antiforensics")}>
-              <Eye size={14} className="mr-1" /> Anti-Forensics
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "integrity" ? "active" : ""}`} onClick={() => setActiveSubTab("integrity")}>
-              <Shield size={14} className="mr-1" /> System Health
-            </button>
-          </>
+            {moreTabsOpen && (
+              <div className="ma-more-menu" onMouseDown={(e) => e.stopPropagation()}>
+                {hiddenTabs.map(({ id, label, icon: Icon }) => (
+                  <button key={id} className={`ma-more-item ${activeSubTab === id ? "active" : ""}`} onClick={() => { setActiveSubTab(id); setMoreTabsOpen(false); }}>
+                    <Icon size={13} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
-        <button className={`ma-tab-btn ${activeSubTab === "processes" ? "active" : ""}`} onClick={() => setActiveSubTab("processes")}>
-          <List size={14} className="mr-1" /> Process List
-        </button>
-        {analysisMode === "dump" && (
-          <>
-            <button className={`ma-tab-btn ${activeSubTab === "hidden" ? "active" : ""}`} onClick={() => setActiveSubTab("hidden")}>
-              <Eye size={14} className="mr-1" /> Hidden Tasks
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "bash" ? "active" : ""}`} onClick={() => setActiveSubTab("bash")}>
-              <Terminal size={14} className="mr-1" /> Bash History
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "malfind" ? "active" : ""}`} onClick={() => setActiveSubTab("malfind")}>
-              <Shield size={14} className="mr-1" /> Malfind
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "modules" ? "active" : ""}`} onClick={() => setActiveSubTab("modules")}>
-              <Archive size={14} className="mr-1" /> Kernel Modules
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "files" ? "active" : ""}`} onClick={() => setActiveSubTab("files")}>
-              <Paperclip size={14} className="mr-1" /> Open Files
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "maps" ? "active" : ""}`} onClick={() => setActiveSubTab("maps")}>
-              <Link size={14} className="mr-1" /> Shared Libraries
-            </button>
-            <button className={`ma-tab-btn ${activeSubTab === "network" ? "active" : ""}`} onClick={() => setActiveSubTab("network")}>
-              <Wifi size={14} className="mr-1" /> Connections
-            </button>
-          </>
-        )}
-        <button className={`ma-tab-btn ${activeSubTab === "report" ? "active" : ""}`} onClick={() => setActiveSubTab("report")}>
-          <FileText size={14} className="mr-1" /> AI Forensic Report
-        </button>
+
+        <div className="ma-tabs-measure-wrap" ref={memMeasureWrapRef} aria-hidden="true">
+          {memoryTabs.map(({ id, label, icon: Icon }) => (
+            <span key={id} className="ma-tab-btn" data-mem-tab-id={id}>
+              <Icon size={14} className="mr-1" /> {label}
+            </span>
+          ))}
+          <span className="ma-tab-btn ma-more-btn" ref={memMoreMeasureRef}><Plus size={14} className="mr-1" /> More</span>
+        </div>
       </div>
 
       <div className="ma-content-area">
@@ -8058,12 +8267,43 @@ function MemoryAnalyser() {
             </div>
 
             <div className="ma-card">
-              <div className="card-header"><h3><Shield size={16} /> Security Overview</h3></div>
-              <div className="usage-details">
-                <p style={{ fontSize: "12px", color: "var(--wf-text-muted)" }}>Live memory analysis detects patterns of unauthorized execution and resource exhaustion.</p>
-                <div style={{ marginTop: "20px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}><span style={{ fontSize: "11px", fontWeight: "600" }}>System Integrity</span><span style={{ color: "#16a34a", fontSize: "11px", fontWeight: "700" }}>VERIFIED</span></div>
-                  <div style={{ width: "100%", height: "4px", background: "#f1f5f9", borderRadius: "2px" }}><div style={{ width: "100%", height: "100%", background: "#16a34a", borderRadius: "2px" }}></div></div>
+              <div className="card-header">
+                <h3><Shield size={16} /> Live Forensic Summary</h3>
+                <span className={`status-pill ${liveSummary.suspiciousProcesses + liveSummary.injections > 0 ? "warning" : "safe"}`}>
+                  {liveSummary.suspiciousProcesses + liveSummary.injections > 0 ? "Needs Review" : "Stable"}
+                </span>
+              </div>
+              <div className="summary-stack">
+                <div className="summary-row">
+                  <span>Suspicious processes</span>
+                  <strong>{liveSummary.suspiciousProcesses}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Injection regions</span>
+                  <strong>{liveSummary.injections}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Elevated processes</span>
+                  <strong>{liveSummary.elevatedProcesses}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Sensitive handles</span>
+                  <strong>{liveSummary.sensitiveHandles}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Credential artefacts</span>
+                  <strong>{liveSummary.credentialArtifacts}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Kernel modules</span>
+                  <strong>{liveSummary.kernelModules}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Orphan processes</span>
+                  <strong>{liveSummary.orphans}</strong>
+                </div>
+                <div className="summary-note">
+                  Kernel taint: <code>{liveSummary.kernelTaint}</code>
                 </div>
               </div>
             </div>
@@ -8086,6 +8326,257 @@ function MemoryAnalyser() {
                       <td><span className="proc-name-highlight">{p.name}</span></td>
                       <td><span className="mem-value">{p.memory_kb ? fmtSize(p.memory_kb * 1024) : 'N/A'}</span></td>
                       <td><code className="cmdline-forensic" title={p.cmdline}>{p.cmdline || 'N/A'}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "tree" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Network size={16} /> Process Tree</h3>
+              <div className="proc-count-badge">{processTree.summary?.total_processes || 0} processes</div>
+            </div>
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>PID</th><th>PPID</th><th>Process</th><th>Memory</th><th>Start</th></tr></thead>
+                <tbody>
+                  {treeRows.map((n, i) => (
+                    <tr key={`${n.pid}-${i}`}>
+                      <td><code className="pid-badge">{n.pid}</code></td>
+                      <td>{n.ppid || "-"}</td>
+                      <td style={{ paddingLeft: `${8 + (n.depth || 0) * 16}px` }}><strong>{n.name}</strong><div style={{ fontSize: "11px", color: "var(--fg-muted)" }}>{n.cmdline || "-"}</div></td>
+                      <td>{n.memory_kb ? fmtSize(n.memory_kb * 1024) : "-"}</td>
+                      <td>{n.start_time ? fmtDate(n.start_time) : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "libraries" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Box size={16} /> Loaded Modules & Shared Libraries</h3>
+              <div className="proc-count-badge">{libraries.summary?.unique_libraries || 0} libraries</div>
+            </div>
+            {libraries.summary?.suspicious_libraries > 0 && (
+              <div className="alert-box" style={{ marginBottom: 12 }}>
+                <div className="alert-title">Suspicious libraries detected</div>
+                <div className="alert-detail">Writable paths, deleted mappings, or missing backing files were found in memory.</div>
+              </div>
+            )}
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>Library</th><th>Processes</th><th>Count</th><th>Flags</th></tr></thead>
+                <tbody>
+                  {libraryRows.map((lib, i) => (
+                    <tr key={i}>
+                      <td><code>{lib.path}</code></td>
+                      <td>{(lib.processes || []).slice(0, 6).join(", ") || "-"}</td>
+                      <td>{lib.count || 0}</td>
+                      <td>{lib.suspicious ? <span className="risk-badge high">Suspicious</span> : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "injections" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><ShieldAlert size={16} /> Injection & Hollowing Detection</h3>
+              <div className="proc-count-badge">{injections.summary?.count || 0} regions</div>
+            </div>
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>PID</th><th>Process</th><th>Region</th><th>Perms</th><th>Path</th><th>Severity</th></tr></thead>
+                <tbody>
+                  {injectionRows.map((inj, i) => (
+                    <tr key={i}>
+                      <td><code className="pid-badge">{inj.pid}</code></td>
+                      <td>{inj.process || "-"}</td>
+                      <td><code>{inj.region}</code></td>
+                      <td><code>{inj.permissions}</code></td>
+                      <td style={{ wordBreak: "break-all" }}>{inj.path || "-"}</td>
+                      <td><span className={`risk-badge ${inj.severity || "medium"}`}>{inj.severity || "medium"}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "handles" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Paperclip size={16} /> Open Handles & Objects</h3>
+              <div className="proc-count-badge">{handles.summary?.total_handles || 0} handles</div>
+            </div>
+            {sensitiveHandleRows.length > 0 && (
+              <div className="alert-box" style={{ marginBottom: 12 }}>
+                <div className="alert-title">Sensitive handles</div>
+                <div className="alert-detail">Potential access to SSH keys, shadow files, keyrings, or wallets.</div>
+              </div>
+            )}
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>PID</th><th>Process</th><th>FD</th><th>Category</th><th>Target</th></tr></thead>
+                <tbody>
+                  {handleRows.map((h, i) => (
+                    <tr key={i}>
+                      <td><code className="pid-badge">{h.pid}</code></td>
+                      <td>{h.process || "-"}</td>
+                      <td>{h.fd}</td>
+                      <td><span className="status-pill info">{h.category}</span></td>
+                      <td style={{ wordBreak: "break-all" }}><code>{h.target}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "privileges" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Key size={16} /> Token / Privilege Analysis</h3>
+              <div className="proc-count-badge">{privileges.summary?.elevated_processes || 0} elevated</div>
+            </div>
+            {notablePrivileges.length > 0 && (
+              <div className="alert-box" style={{ marginBottom: 12 }}>
+                <div className="alert-title">Notable elevated processes</div>
+                <div className="alert-detail">Processes with elevated UIDs or powerful capabilities were identified in live memory.</div>
+              </div>
+            )}
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>PID</th><th>Process</th><th>UIDs</th><th>Capabilities</th><th>Flags</th></tr></thead>
+                <tbody>
+                  {privilegeRows.map((p, i) => (
+                    <tr key={i}>
+                      <td><code className="pid-badge">{p.pid}</code></td>
+                      <td>{p.process}</td>
+                      <td><code>{p.uids || "-"}</code></td>
+                      <td><code>{(p.capabilities || []).slice(0, 4).join(", ") || "-"}</code></td>
+                      <td>{p.elevated ? <span className="risk-badge medium">Elevated</span> : "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "threads" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Users size={16} /> Thread Activity</h3>
+              <div className="proc-count-badge">{threads.summary?.tracked_processes || 0} processes</div>
+            </div>
+            {suspiciousThreads.length > 0 && (
+              <div className="alert-box" style={{ marginBottom: 12 }}>
+                <div className="alert-title">Unusual thread activity</div>
+                <div className="alert-detail">High thread counts or suspicious thread naming patterns were found.</div>
+              </div>
+            )}
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>PID</th><th>Process</th><th>Threads</th><th>Sample Thread Names</th></tr></thead>
+                <tbody>
+                  {threadRows.map((p, i) => (
+                    <tr key={i}>
+                      <td><code className="pid-badge">{p.pid}</code></td>
+                      <td>{p.process}</td>
+                      <td>{p.thread_count}</td>
+                      <td><code>{(p.thread_names || []).slice(0, 4).join(", ") || "-"}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "credentials" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Lock size={16} /> Credential Artefacts</h3>
+              <div className="proc-count-badge">{credentials.summary?.credential_artifacts || 0} findings</div>
+            </div>
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>PID</th><th>Process</th><th>Keywords</th><th>Sensitive Targets</th></tr></thead>
+                <tbody>
+                  {credentialRows.map((c, i) => (
+                    <tr key={i}>
+                      <td><code className="pid-badge">{c.pid}</code></td>
+                      <td>{c.process}</td>
+                      <td><code>{(c.keywords || []).join(", ") || "-"}</code></td>
+                      <td style={{ wordBreak: "break-all" }}><code>{(c.sensitive_targets || []).slice(0, 3).join(" | ") || "-"}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "kernel" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Server size={16} /> Kernel Artifacts</h3>
+              <div className="proc-count-badge">{kernel.summary?.module_count || 0} modules</div>
+            </div>
+            <div className="alert-box" style={{ marginBottom: 12 }}>
+              <div className="alert-title">Kernel state</div>
+              <div className="alert-detail">Taint: {kernel.summary?.tainted || "0"} | kptr_restrict: {kernel.summary?.kptr_restrict || "-"}</div>
+            </div>
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>Module</th><th>Size</th><th>Ref</th><th>State</th><th>Offset</th></tr></thead>
+                <tbody>
+                  {kernelModules.map((m, i) => (
+                    <tr key={i}>
+                      <td>{m.name}</td>
+                      <td>{fmtSize(m.size || 0)}</td>
+                      <td>{m.refcount ?? 0}</td>
+                      <td>{m.state || "-"}</td>
+                      <td><code>{m.offset || "-"}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === "timeline" && analysisMode === "live" && (
+          <div className="ma-card proc-panel animate-fade-in">
+            <div className="card-header">
+              <h3><Clock size={16} /> Memory Timeline</h3>
+              <div className="proc-count-badge">{timeline.summary?.events || 0} events</div>
+            </div>
+            <div className="table-wrapper">
+              <table className="forensic-table">
+                <thead><tr><th>Timestamp</th><th>PID</th><th>Process</th><th>Event</th><th>Detail</th></tr></thead>
+                <tbody>
+                  {timelineRows.map((ev, i) => (
+                    <tr key={i}>
+                      <td>{fmtDate(ev.timestamp)}</td>
+                      <td><code className="pid-badge">{ev.pid}</code></td>
+                      <td>{ev.process}</td>
+                      <td>{ev.event}</td>
+                      <td style={{ wordBreak: "break-all" }}><code>{ev.detail || "-"}</code></td>
                     </tr>
                   ))}
                 </tbody>

@@ -4,6 +4,7 @@ import time
 import re
 import math
 import struct
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Tuple
 import subprocess
 
@@ -90,7 +91,11 @@ def get_top_memory_processes(limit: int = 15) -> List[Dict[str, Any]]:
     processes.sort(key=lambda x: x["memory_kb"], reverse=True)
     return processes[:limit]
 
-def generate_memory_ai_insight(ram_info: Dict[str, Any], top_procs: List[Dict[str, Any]]) -> str:
+def generate_memory_ai_insight(
+    ram_info: Dict[str, Any],
+    top_procs: List[Dict[str, Any]],
+    extra_context: Dict[str, Any] | None = None,
+) -> str:
     """Send memory data to Ollama for forensic analysis."""
     from .agent_core import get_agent
     
@@ -98,6 +103,25 @@ def generate_memory_ai_insight(ram_info: Dict[str, Any], top_procs: List[Dict[st
     
     # Format process list for the prompt
     proc_summary = "\n".join([f"- PID {p['pid']}: {p['name']} ({p['memory_kb']} KB) - {p['cmdline'][:100]}" for p in top_procs])
+    extra_summary = ""
+    if extra_context:
+        tree = extra_context.get("process_tree", {}).get("summary", {})
+        libs = extra_context.get("libraries", {}).get("summary", {})
+        inj = extra_context.get("injections", {}).get("summary", {})
+        handles = extra_context.get("handles", {}).get("summary", {})
+        privs = extra_context.get("privileges", {}).get("summary", {})
+        creds = extra_context.get("credentials", {}).get("summary", {})
+        kernel = extra_context.get("kernel", {}).get("summary", {})
+        extra_summary = f"""
+ADDITIONAL FORENSIC SUMMARY:
+- Process Tree: {tree.get('total_processes', 0)} tracked / {tree.get('orphan_processes', 0)} orphans
+- Libraries: {libs.get('unique_libraries', 0)} unique / {libs.get('suspicious_libraries', 0)} suspicious
+- Injections: {inj.get('count', 0)} regions / {inj.get('critical', 0)} critical
+- Handles: {handles.get('total_handles', 0)} total / {handles.get('sensitive_handles', 0)} sensitive
+- Privileges: {privs.get('elevated_processes', 0)} elevated processes
+- Credentials: {creds.get('credential_artifacts', 0)} artefacts / {creds.get('high_risk', 0)} high-risk
+- Kernel: {kernel.get('module_count', 0)} modules, tainted={kernel.get('tainted', '0')}
+"""
     
     prompt = f"""
 Analyze the following system memory state for potential security risks, suspicious patterns, or performance anomalies from a forensic perspective.
@@ -110,6 +134,8 @@ SYSTEM RAM SUMMARY:
 
 TOP MEMORY CONSUMING PROCESSES:
 {proc_summary}
+
+{extra_summary}
 
 Provide a COMPLETE FORENSICS REPORT categorized tab-wise.
 Use the following Markdown structure strictly:
@@ -678,3 +704,439 @@ def get_system_integrity_metrics() -> Dict[str, Any]:
     )
     
     return metrics
+
+
+# ─── Memory-specific forensic collectors ─────────────────────────────────────
+
+def _proc_pids() -> List[int]:
+    try:
+        return [int(d) for d in os.listdir("/proc") if d.isdigit()]
+    except Exception:
+        return []
+
+
+def _read_text(path: str, default: str = "") -> str:
+    try:
+        with open(path, "r", errors="ignore") as f:
+            return f.read()
+    except Exception:
+        return default
+
+
+def _read_link(path: str) -> str:
+    try:
+        return os.readlink(path)
+    except Exception:
+        return ""
+
+
+def _status_map(pid: int) -> Dict[str, str]:
+    info: Dict[str, str] = {}
+    for line in _read_text(f"/proc/{pid}/status").splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            info[key.strip()] = value.strip()
+    return info
+
+
+def _stat_values(pid: int) -> List[str]:
+    data = _read_text(f"/proc/{pid}/stat").strip()
+    if not data:
+        return []
+    return data.split()
+
+
+def _parse_uid(value: str) -> str:
+    return value.split()[0] if value else ""
+
+
+def _capability_names(mask: int) -> List[str]:
+    caps = [
+        "CAP_CHOWN", "CAP_DAC_OVERRIDE", "CAP_DAC_READ_SEARCH", "CAP_FOWNER", "CAP_FSETID",
+        "CAP_KILL", "CAP_SETGID", "CAP_SETUID", "CAP_SETPCAP", "CAP_LINUX_IMMUTABLE",
+        "CAP_NET_BIND_SERVICE", "CAP_NET_BROADCAST", "CAP_NET_ADMIN", "CAP_NET_RAW", "CAP_IPC_LOCK",
+        "CAP_IPC_OWNER", "CAP_SYS_MODULE", "CAP_SYS_RAWIO", "CAP_SYS_CHROOT", "CAP_SYS_PTRACE",
+        "CAP_SYS_PACCT", "CAP_SYS_ADMIN", "CAP_SYS_BOOT", "CAP_SYS_NICE", "CAP_SYS_RESOURCE",
+        "CAP_SYS_TIME", "CAP_SYS_TTY_CONFIG", "CAP_MKNOD", "CAP_LEASE", "CAP_AUDIT_WRITE",
+        "CAP_AUDIT_CONTROL", "CAP_SETFCAP", "CAP_MAC_OVERRIDE", "CAP_MAC_ADMIN", "CAP_SYSLOG",
+        "CAP_WAKE_ALARM", "CAP_BLOCK_SUSPEND", "CAP_AUDIT_READ", "CAP_PERFMON", "CAP_BPF",
+        "CAP_CHECKPOINT_RESTORE",
+    ]
+    names = []
+    for i, name in enumerate(caps):
+        if mask & (1 << i):
+            names.append(name)
+    return names
+
+
+def _proc_start_time(pid: int) -> str:
+    stat = _stat_values(pid)
+    if len(stat) < 22:
+        return ""
+    try:
+        hz = os.sysconf(os.sysconf_names.get("SC_CLK_TCK", "SC_CLK_TCK"))
+    except Exception:
+        hz = 100
+    btime = None
+    for line in _read_text("/proc/stat").splitlines():
+        if line.startswith("btime "):
+            try:
+                btime = int(line.split()[1])
+            except Exception:
+                pass
+            break
+    if btime is None:
+        return ""
+    try:
+        start_ticks = int(stat[21])
+        ts = btime + (start_ticks / hz)
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    except Exception:
+        return ""
+
+
+def get_process_tree(limit: int = 300) -> Dict[str, Any]:
+    """Build a live process tree with ancestry and process metadata."""
+    nodes: List[Dict[str, Any]] = []
+    by_pid: Dict[int, Dict[str, Any]] = {}
+    for pid in _proc_pids()[:limit]:
+        stat = _stat_values(pid)
+        if len(stat) < 5:
+            continue
+        ppid = int(stat[3]) if stat[3].isdigit() else 0
+        state = stat[2] if len(stat) > 2 else ""
+        status = _status_map(pid)
+        cmdline = _read_text(f"/proc/{pid}/cmdline").replace("\x00", " ").strip()
+        name = _read_text(f"/proc/{pid}/comm").strip() or stat[1].strip("()")
+        rss_kb = 0
+        statm = _read_text(f"/proc/{pid}/statm").split()
+        if len(statm) >= 2:
+            try:
+                rss_kb = int(statm[1]) * (os.sysconf("SC_PAGE_SIZE") // 1024)
+            except Exception:
+                rss_kb = 0
+        node = {
+            "pid": pid,
+            "ppid": ppid,
+            "name": name,
+            "cmdline": cmdline or f"[{name}]",
+            "state": state,
+            "user": _parse_uid(status.get("Uid", "")),
+            "threads": int(status.get("Threads", "0").split()[0]) if status.get("Threads") else 0,
+            "memory_kb": rss_kb,
+            "start_time": _proc_start_time(pid),
+            "children": [],
+        }
+        nodes.append(node)
+        by_pid[pid] = node
+
+    roots: List[Dict[str, Any]] = []
+    orphans: List[Dict[str, Any]] = []
+    for node in nodes:
+        parent = by_pid.get(node["ppid"])
+        if parent:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+            if node["ppid"] not in (0, 1):
+                orphans.append(node)
+
+    roots.sort(key=lambda n: n["pid"])
+    return {
+        "summary": {
+            "total_processes": len(nodes),
+            "root_processes": len(roots),
+            "orphan_processes": len(orphans),
+        },
+        "tree": roots[:50],
+        "nodes": nodes[:limit],
+        "orphans": orphans[:50],
+    }
+
+
+def get_loaded_libraries(limit: int = 200) -> Dict[str, Any]:
+    """Collect shared library / module mapping evidence from live processes."""
+    library_map: Dict[str, Dict[str, Any]] = {}
+    suspicious: List[Dict[str, Any]] = []
+    for pid in _proc_pids()[:limit]:
+        seen = set()
+        for line in _read_text(f"/proc/{pid}/maps").splitlines():
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            path = parts[5]
+            if not path or path.startswith("["):
+                continue
+            if ".so" not in path and "/lib" not in path and "/usr" not in path:
+                continue
+            if path in seen:
+                continue
+            seen.add(path)
+            rec = library_map.setdefault(path, {"path": path, "processes": [], "count": 0, "suspicious": False, "reasons": []})
+            rec["count"] += 1
+            rec["processes"].append(pid)
+            if len(rec["processes"]) > 10:
+                rec["processes"] = rec["processes"][:10]
+            reasons = rec["reasons"]
+            suspicious_hit = False
+            if any(marker in path for marker in ("/tmp/", "/var/tmp/", "/dev/shm/")):
+                suspicious_hit = True
+                reasons.append("Loaded from writable temp path")
+            if path.endswith(" (deleted)") or "deleted" in path:
+                suspicious_hit = True
+                reasons.append("Backing file deleted while mapped")
+            if not os.path.exists(path.replace(" (deleted)", "")):
+                suspicious_hit = True
+                reasons.append("Mapped file missing on disk")
+            rec["suspicious"] = rec["suspicious"] or suspicious_hit
+    for rec in library_map.values():
+        if rec["suspicious"]:
+            suspicious.append(rec)
+    libs = sorted(library_map.values(), key=lambda x: (-x["count"], x["path"]))
+    return {
+        "libraries": libs[:200],
+        "suspicious": suspicious[:100],
+        "summary": {
+            "unique_libraries": len(libs),
+            "suspicious_libraries": len(suspicious),
+        },
+    }
+
+
+def detect_injected_memory_regions(limit: int = 200) -> Dict[str, Any]:
+    """Detect RWX regions, anonymous executable pages, and deleted executable mappings."""
+    findings: List[Dict[str, Any]] = []
+    for pid in _proc_pids()[:limit]:
+        cmdline = _read_text(f"/proc/{pid}/cmdline").replace("\x00", " ").strip()
+        for line in _read_text(f"/proc/{pid}/maps").splitlines():
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            region = parts[0]
+            perms = parts[1]
+            path = parts[5] if len(parts) > 5 else ""
+            reasons = []
+            sev = None
+            if "x" in perms and "w" in perms:
+                sev = "high"
+                reasons.append("Writable and executable memory")
+            if path == "" or path.startswith("["):
+                if "x" in perms:
+                    sev = sev or "medium"
+                    reasons.append("Anonymous executable mapping")
+            if "deleted" in path:
+                sev = sev or "high"
+                reasons.append("Executable mapping backed by deleted file")
+            if reasons:
+                findings.append({
+                    "pid": pid,
+                    "process": cmdline or _read_text(f"/proc/{pid}/comm").strip(),
+                    "region": region,
+                    "permissions": perms,
+                    "path": path,
+                    "severity": sev or "medium",
+                    "reasons": reasons,
+                })
+    return {
+        "findings": findings[:200],
+        "summary": {
+            "count": len(findings),
+            "critical": len([f for f in findings if f["severity"] == "high"]),
+        },
+    }
+
+
+def get_handle_inventory(limit: int = 150) -> Dict[str, Any]:
+    """Collect open handles, files, sockets, pipes, and sensitive targets."""
+    handles: List[Dict[str, Any]] = []
+    sensitive: List[Dict[str, Any]] = []
+    for pid in _proc_pids()[:limit]:
+        proc = _read_text(f"/proc/{pid}/comm").strip()
+        fd_dir = f"/proc/{pid}/fd"
+        try:
+            for fd in os.listdir(fd_dir)[:200]:
+                target = _read_link(os.path.join(fd_dir, fd))
+                if not target:
+                    continue
+                category = "file"
+                if target.startswith("socket:"):
+                    category = "socket"
+                elif target.startswith("pipe:"):
+                    category = "pipe"
+                elif target.startswith("anon_inode:"):
+                    category = "anon_inode"
+                entry = {"pid": pid, "process": proc, "fd": fd, "target": target, "category": category}
+                handles.append(entry)
+                if any(flag in target for flag in ("/etc/shadow", "/etc/sudoers", "/root/.ssh", "/home/", "id_rsa", "id_ed25519", "gnupg", "keyring", "secret", "wallet")):
+                    sensitive.append(entry)
+        except Exception:
+            continue
+    return {
+        "handles": handles[:400],
+        "sensitive_handles": sensitive[:200],
+        "summary": {
+            "total_handles": len(handles),
+            "sensitive_handles": len(sensitive),
+        },
+    }
+
+
+def get_privilege_artifacts(limit: int = 150) -> Dict[str, Any]:
+    """Inspect privilege and capability state for running processes."""
+    processes: List[Dict[str, Any]] = []
+    notable: List[Dict[str, Any]] = []
+    for pid in _proc_pids()[:limit]:
+        status = _status_map(pid)
+        cap_eff = 0
+        try:
+            cap_eff = int(status.get("CapEff", "0"), 16)
+        except Exception:
+            cap_eff = 0
+        caps = _capability_names(cap_eff)
+        uid = status.get("Uid", "")
+        gid = status.get("Gid", "")
+        entry = {
+            "pid": pid,
+            "process": _read_text(f"/proc/{pid}/comm").strip(),
+            "uids": uid,
+            "gids": gid,
+            "capabilities": caps,
+            "no_new_privs": status.get("NoNewPrivs", "0"),
+            "seccomp": status.get("Seccomp", "0"),
+            "elevated": uid.startswith("0") or "CAP_SYS_ADMIN" in caps or "CAP_SYS_PTRACE" in caps,
+        }
+        processes.append(entry)
+        if entry["elevated"] or caps:
+            notable.append(entry)
+    return {
+        "processes": processes[:400],
+        "notable": notable[:200],
+        "summary": {
+            "total_processes": len(processes),
+            "elevated_processes": len([p for p in processes if p["elevated"]]),
+        },
+    }
+
+
+def get_thread_activity(limit: int = 150) -> Dict[str, Any]:
+    """Collect per-process thread counts and suspicious thread activity."""
+    procs: List[Dict[str, Any]] = []
+    suspicious: List[Dict[str, Any]] = []
+    for pid in _proc_pids()[:limit]:
+        status = _status_map(pid)
+        threads = int(status.get("Threads", "0").split()[0]) if status.get("Threads") else 0
+        comm = _read_text(f"/proc/{pid}/comm").strip()
+        task_dir = f"/proc/{pid}/task"
+        thread_names = []
+        try:
+            for tid in os.listdir(task_dir)[:50]:
+                thread_names.append(_read_text(os.path.join(task_dir, tid, "comm")).strip())
+        except Exception:
+            pass
+        entry = {
+            "pid": pid,
+            "process": comm,
+            "thread_count": threads,
+            "thread_names": thread_names[:12],
+        }
+        procs.append(entry)
+        if threads >= 25 or any(name.lower() in {"runc", "kworker", "systemd-journald"} for name in thread_names):
+            suspicious.append(entry)
+    return {
+        "processes": procs[:200],
+        "suspicious": suspicious[:100],
+        "summary": {
+            "tracked_processes": len(procs),
+            "suspicious_thread_groups": len(suspicious),
+        },
+    }
+
+
+def get_credential_artifacts(limit: int = 150) -> Dict[str, Any]:
+    """Detect credential-related memory artefacts and process activity."""
+    findings: List[Dict[str, Any]] = []
+    watched = ("ssh-agent", "gpg-agent", "keyring", "secret", "krb5", "sudo", "pkexec", "polkit", "passwd", "wallet")
+    sensitive_paths = ("/etc/shadow", "/etc/gshadow", "/root/.ssh", "/home/", "id_rsa", "id_ed25519", "known_hosts", "krb5.conf", "keyring")
+    for pid in _proc_pids()[:limit]:
+        comm = _read_text(f"/proc/{pid}/comm").strip()
+        cmdline = _read_text(f"/proc/{pid}/cmdline").replace("\x00", " ").strip()
+        environ = _read_text(f"/proc/{pid}/environ").replace("\x00", " ")
+        scored = []
+        for word in watched:
+            if word in comm.lower() or word in cmdline.lower() or word in environ.lower():
+                scored.append(word)
+        fd_hits = []
+        try:
+            for fd in os.listdir(f"/proc/{pid}/fd")[:80]:
+                target = _read_link(f"/proc/{pid}/fd/{fd}")
+                if any(path in target for path in sensitive_paths):
+                    fd_hits.append(target)
+        except Exception:
+            pass
+        if scored or fd_hits:
+            findings.append({
+                "pid": pid,
+                "process": comm,
+                "cmdline": cmdline,
+                "keywords": sorted(set(scored)),
+                "sensitive_targets": fd_hits[:10],
+                "severity": "high" if fd_hits else "medium",
+            })
+    return {
+        "findings": findings[:200],
+        "summary": {
+            "credential_artifacts": len(findings),
+            "high_risk": len([f for f in findings if f["severity"] == "high"]),
+        },
+    }
+
+
+def get_kernel_artifacts() -> Dict[str, Any]:
+    """Inspect kernel/module artifacts for tampering or unusual state."""
+    modules = []
+    for line in _read_text("/proc/modules").splitlines():
+        parts = line.split()
+        if len(parts) >= 6:
+            modules.append({
+                "name": parts[0],
+                "size": int(parts[1]) if parts[1].isdigit() else 0,
+                "refcount": int(parts[2].rstrip("-")) if parts[2].rstrip("-").isdigit() else 0,
+                "deps": parts[3],
+                "state": parts[4],
+                "offset": parts[5],
+            })
+    taint = _read_text("/proc/sys/kernel/tainted").strip()
+    kptr = _read_text("/proc/sys/kernel/kptr_restrict").strip()
+    return {
+        "modules": modules[:200],
+        "summary": {
+            "module_count": len(modules),
+            "tainted": taint,
+            "kptr_restrict": kptr,
+        },
+        "flags": [
+            "Kernel tainted" if taint and taint != "0" else "",
+            "Kernel pointers hidden" if kptr == "2" else "",
+        ],
+    }
+
+
+def get_memory_timeline(limit: int = 150) -> Dict[str, Any]:
+    """Reconstruct a simple process start timeline from live memory state."""
+    entries: List[Dict[str, Any]] = []
+    for pid in _proc_pids()[:limit]:
+        start_time = _proc_start_time(pid)
+        if not start_time:
+            continue
+        entries.append({
+            "timestamp": start_time,
+            "pid": pid,
+            "process": _read_text(f"/proc/{pid}/comm").strip(),
+            "event": "process_start",
+            "detail": _read_text(f"/proc/{pid}/cmdline").replace("\x00", " ").strip(),
+        })
+    entries.sort(key=lambda x: x["timestamp"])
+    return {
+        "events": entries[:300],
+        "summary": {"events": len(entries)},
+    }

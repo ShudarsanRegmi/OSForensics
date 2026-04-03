@@ -79,9 +79,18 @@ from .live_memory import (
     analyze_network_connections,
     detect_suspicious_processes,
     detect_rootkit_indicators,
+    detect_injected_memory_regions,
     analyze_memory_anomalies,
     detect_anti_forensics,
-    get_system_integrity_metrics
+    get_system_integrity_metrics,
+    get_process_tree,
+    get_loaded_libraries,
+    get_handle_inventory,
+    get_privilege_artifacts,
+    get_thread_activity,
+    get_credential_artifacts,
+    get_kernel_artifacts,
+    get_memory_timeline,
 )
 from .memory import analyze_memory
 from .antiforensics import detect_antiforensics
@@ -1222,7 +1231,16 @@ def memory_live():
     try:
         return {
             "ram": get_live_ram_info(),
-            "top_processes": get_top_memory_processes()
+            "top_processes": get_top_memory_processes(),
+            "process_tree": get_process_tree(),
+            "libraries": get_loaded_libraries(),
+            "injections": detect_injected_memory_regions(),
+            "handles": get_handle_inventory(),
+            "privileges": get_privilege_artifacts(),
+            "threads": get_thread_activity(),
+            "credentials": get_credential_artifacts(),
+            "kernel": get_kernel_artifacts(),
+            "timeline": get_memory_timeline(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e)})
@@ -1234,7 +1252,8 @@ def memory_ai_analysis():
     try:
         ram = get_live_ram_info()
         procs = get_top_memory_processes()
-        insight = generate_memory_ai_insight(ram, procs)
+        context = get_forensic_summary()
+        insight = generate_memory_ai_insight(ram, procs, context)
         return {"insight": insight}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e)})
@@ -1314,6 +1333,15 @@ def get_memory_anomalies():
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
 
+@app.get("/memory/injections")
+def get_memory_injections():
+    """Detect injected code, RWX pages, and hollowing-style memory regions."""
+    try:
+        return detect_injected_memory_regions()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
 @app.get("/memory/anti-forensics")
 def detect_anti_forensics_attempts():
     """Detect anti-forensics tools and evidence destruction attempts."""
@@ -1339,14 +1367,87 @@ def get_forensic_summary():
         return {
             "ram_info": get_live_ram_info(),
             "top_processes": get_top_memory_processes(10),
+            "process_tree": get_process_tree(),
+            "libraries": get_loaded_libraries(),
             "network": analyze_network_connections(),
             "suspicious_processes": detect_suspicious_processes(),
             "rootkit_indicators": detect_rootkit_indicators(),
+            "injections": detect_injected_memory_regions(),
             "memory_anomalies": analyze_memory_anomalies(),
+            "handles": get_handle_inventory(),
+            "privileges": get_privilege_artifacts(),
+            "threads": get_thread_activity(),
+            "credentials": get_credential_artifacts(),
+            "kernel": get_kernel_artifacts(),
+            "timeline": get_memory_timeline(),
             "anti_forensics": detect_anti_forensics(),
             "system_integrity": get_system_integrity_metrics(),
             "timestamp": time.time()
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/process-tree")
+def memory_process_tree():
+    try:
+        return get_process_tree()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/libraries")
+def memory_libraries():
+    try:
+        return get_loaded_libraries()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/handles")
+def memory_handles():
+    try:
+        return get_handle_inventory()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/privileges")
+def memory_privileges():
+    try:
+        return get_privilege_artifacts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/threads")
+def memory_threads():
+    try:
+        return get_thread_activity()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/credentials")
+def memory_credentials():
+    try:
+        return get_credential_artifacts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/kernel")
+def memory_kernel():
+    try:
+        return get_kernel_artifacts()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail={"error": str(e)})
+
+
+@app.get("/memory/timeline")
+def memory_timeline():
+    try:
+        return get_memory_timeline()
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": str(e)})
 
